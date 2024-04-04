@@ -47,3 +47,9 @@ out/
 /*.out
 out_expected.txt
 /*-timing.json
+abha.txt
+main
+*.checksum
+src/*
+*.pprof
+*.txt
