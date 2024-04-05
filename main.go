@@ -229,18 +229,20 @@ func parseLine(data []byte) (int, stationName, measurement) {
 	if newlineIdx == -1 {
 		return -1, "", 0
 	}
+
 	// Because the measurement value can be 9.9 or -99.9 max, the ; must be 3 to 5 bytes before
 	// the \n.
 	// This way is ~20% faster than another bytes.IndexByte().
 	var separatorIdx int
-	check3, check5 := data[newlineIdx-4], data[newlineIdx-6]
-	if check3 == ';' {
+	if data[newlineIdx-4] == ';' {
 		separatorIdx = newlineIdx - 4
-	} else if check5 == ';' {
+	} else if len(data[:newlineIdx]) >= 6 && data[newlineIdx-6] == ';' {
 		separatorIdx = newlineIdx - 6
-	} else {
+	} else if len(data[:newlineIdx]) >= 5 {
 		// If its not 3th or 5th byte from the end, it must be 4th.
 		separatorIdx = newlineIdx - 5
+	} else {
+		return -1, "", 0
 	}
 
 	name := stationName(unsafe.String(&data[0], len(data[:separatorIdx])))
