@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"iter"
+	"math"
 	"os"
 	"runtime"
 	"sort"
@@ -25,9 +27,9 @@ var (
 	kiB = 1024
 	MiB = kiB * kiB
 
-	defaultMeasurementsFile = "measurements.txt"
-	maxStations             = 1 << 14
-	chunkSize               = 32 * MiB
+	defaultMeasurementsFile = "../../../../measurements.txt"
+	maxStations             = 10_000
+	chunkSize               = 6 * MiB
 
 	chunkReaders      = runtime.NumCPU()
 	chunksChanBufSize = 0
@@ -292,16 +294,19 @@ func updateStats(stats *stats, measurement measurement) {
 // sumChunk merges the chunks from each worker into final output map.
 // The 1st chunk is reused, and this function takes 150us in the worst case.
 func sumChunk(sumStationData *simpleMap, stationDataChunk *simpleMap) {
-	next := stationDataChunk.iter()
-	for {
-		pos, stationName, stationStats, ok := next()
-		if !ok {
-			break
-		}
+	for pos, bucketItem := range stationDataChunk.Iter() {
+		stationName, stationStats := bucketItem.name, bucketItem.stats
+
 		sumStationStats, ok := sumStationData.get(pos, stationName)
 		if !ok {
-			sumStationStats = &stats{}
+			sumStationStats = &stats{
+				count: stationStats.count,
+				sum:   stationStats.sum,
+				min:   stationStats.min,
+				max:   stationStats.max,
+			}
 			sumStationData.set(pos, stationName, sumStationStats)
+			continue
 		}
 
 		sumStationStats.count += stationStats.count
@@ -324,13 +329,8 @@ func printOutput(sumStationData *simpleMap) {
 		pos  uint32
 	}
 	var names []nameWithPosition = make([]nameWithPosition, 0, sumStationData.len())
-	next := sumStationData.iter()
-	for {
-		pos, k, _, ok := next()
-		if !ok {
-			break
-		}
-		names = append(names, nameWithPosition{name: k, pos: pos})
+	for pos, bucketItem := range sumStationData.Iter() {
+		names = append(names, nameWithPosition{name: bucketItem.name, pos: pos})
 	}
 	sort.Slice(names, func(i, j int) bool { return names[i].name < names[j].name })
 
@@ -344,7 +344,7 @@ func printOutput(sumStationData *simpleMap) {
 				"%s=%.1f/%.1f/%.1f",
 				station.name,
 				correctMagnitude(stationStats.min),
-				mean(correctMagnitude(stationStats.sum), stationStats.count),
+				mean(stationStats.sum, stationStats.count),
 				correctMagnitude(stationStats.max),
 			))
 		if i < len(names)-1 {
@@ -366,8 +366,8 @@ func correctMagnitude[T minT | maxT | sumT](n T) float64 {
 	return float64(n) / 10
 }
 
-func mean(sum float64, count countT) float64 {
-	return sum / float64(count)
+func mean(sum sumT, count countT) float64 {
+	return math.Round(float64(sum)/float64(count)) / 10
 }
 
 // simpleMap is array backed map, it turns out that for this
@@ -399,33 +399,15 @@ func (m *simpleMap) len() int {
 	return m.length
 }
 
-func (m *simpleMap) iter() func() (uint32, stationName, *stats, bool) {
-	var (
-		bucketIndex int
-		itemIndex   int
-	)
-
-	return func() (uint32, stationName, *stats, bool) {
-		// Move to next bucket if we are over current bucket size.
-		// And start from 0 of the bucket.
-		if itemIndex >= len(m.data[bucketIndex].items) {
-			for i := bucketIndex + 1; i <= len(m.data)-1; i++ {
-				bucketIndex = i
-				if len(m.data[i].items) != 0 {
-					itemIndex = 0
-					break
+func (m *simpleMap) Iter() iter.Seq2[uint32, bucketItem] {
+	return func(yield func(pos uint32, item bucketItem) bool) {
+		for bucketIndex, bucket := range m.data {
+			for _, bucketItem := range bucket.items {
+				if !yield(uint32(bucketIndex), bucketItem) {
+					return
 				}
 			}
 		}
-		if bucketIndex >= len(m.data)-1 {
-			// If all buckets are exhausted, return empty values.
-			return 0, "", nil, false
-		}
-
-		// Retrieve current item.
-		item := m.data[bucketIndex].items[itemIndex]
-		itemIndex++
-		return uint32(bucketIndex), item.name, item.stats, true
 	}
 }
 

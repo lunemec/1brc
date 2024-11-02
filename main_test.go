@@ -190,12 +190,8 @@ func TestChunkReader(t *testing.T) {
 		assert.Equal(t, v, *gotValue, "stats: %+v not equal to output: %+v", v, gotValue)
 	}
 
-	next := got.iter()
-	for {
-		_, gotName, gotValue, ok := next()
-		if !ok {
-			break
-		}
+	for _, item := range got.Iter() {
+		gotName, gotValue := item.name, item.stats
 		expectValue, ok := want[gotName]
 		assert.True(t, ok, "extra key in output: %s", gotName)
 		assert.Equal(t, expectValue, *gotValue)
@@ -275,8 +271,15 @@ func TestSumStationData(t *testing.T) {
 }
 
 func TestMean(t *testing.T) {
-	want := float64(18.05819509383206)
-	got := mean(correctMagnitude(sumT(11277704)), 62452)
+	want := float64(18.1)
+	got := mean(sumT(11277704), 62452)
+
+	if want != got {
+		t.Errorf("TestMean, got: %+v, want: %+v", got, want)
+	}
+
+	want = float64(1.3)
+	got = mean(sumT(50), 4)
 
 	if want != got {
 		t.Errorf("TestMean, got: %+v, want: %+v", got, want)
