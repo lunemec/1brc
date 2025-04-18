@@ -1,10 +1,12 @@
 package main
 
+// Tested version with Go map after upgrades in 1.24
+// it is slower by 1 second due to rehashing same values.
+
 import (
 	"bytes"
 	"fmt"
 	"io"
-	"iter"
 	"math"
 	"os"
 	"runtime"
@@ -56,6 +58,8 @@ type (
 		max   maxT
 		count countT
 	}
+
+	stationStats map[stationName]*stats
 )
 
 func main() {
@@ -84,7 +88,7 @@ func run(file string) error {
 	defer f.Close()
 
 	var (
-		dataChunkChan = make(chan simpleMap)
+		dataChunkChan = make(chan stationStats)
 		wg            sync.WaitGroup
 	)
 
@@ -196,10 +200,10 @@ func findEndIdx(data []byte, idx int) int {
 	return chunkEnd + 1
 }
 
-func chunkReader(chunks chan chunk) simpleMap {
+func chunkReader(chunks chan chunk) stationStats {
 	// Sadly even though we are reading much smaller chunk here,
 	// it is still likely we get all the station names.
-	out := newSimpleMap(maxStations)
+	out := make(stationStats, maxStations)
 
 	for chunk := range chunks {
 		var (
@@ -211,11 +215,10 @@ func chunkReader(chunks chan chunk) simpleMap {
 				break
 			}
 
-			pos := out.pos(name)
-			stationStats, ok := out.get(pos, name)
+			stationStats, ok := out[name]
 			if !ok {
 				stationStats = &stats{}
-				out.set(pos, name, stationStats)
+				out[name] = stationStats
 			}
 			updateStats(stationStats, measurement)
 			// Save next line's start at current index+1 (step over \n).
@@ -293,11 +296,10 @@ func updateStats(stats *stats, measurement measurement) {
 
 // sumChunk merges the chunks from each worker into final output map.
 // The 1st chunk is reused, and this function takes 150us in the worst case.
-func sumChunk(sumStationData simpleMap, stationDataChunk simpleMap) {
-	for pos, bucketItem := range stationDataChunk.Iter() {
-		stationName, stationStats := bucketItem.name, bucketItem.stats
+func sumChunk(sumStationData stationStats, stationDataChunk stationStats) {
+	for stationName, stationStats := range stationDataChunk {
 
-		sumStationStats, ok := sumStationData.get(pos, stationName)
+		sumStationStats, ok := sumStationData[stationName]
 		if !ok {
 			sumStationStats = &stats{
 				count: stationStats.count,
@@ -305,7 +307,7 @@ func sumChunk(sumStationData simpleMap, stationDataChunk simpleMap) {
 				min:   stationStats.min,
 				max:   stationStats.max,
 			}
-			sumStationData.set(pos, stationName, sumStationStats)
+			sumStationData[stationName] = sumStationStats
 			continue
 		}
 
@@ -319,30 +321,22 @@ func sumChunk(sumStationData simpleMap, stationDataChunk simpleMap) {
 var bench bool
 
 // printOutput: 1.521125ms - 2.49375ms
-func printOutput(sumStationData simpleMap) {
-	// We save the stationName with the position
-	// and when we iterate the map, we can save the
-	// bucket index to prevent yet another hashing
-	// of the name.
-	type nameWithPosition struct {
-		name stationName
-		pos  uint32
+func printOutput(sumStationData stationStats) {
+	var names []stationName = make([]stationName, 0, len(sumStationData))
+	for stationName := range sumStationData {
+		names = append(names, stationName)
 	}
-	var names []nameWithPosition = make([]nameWithPosition, 0, sumStationData.len())
-	for pos, bucketItem := range sumStationData.Iter() {
-		names = append(names, nameWithPosition{name: bucketItem.name, pos: pos})
-	}
-	sort.Slice(names, func(i, j int) bool { return names[i].name < names[j].name })
+	sort.Slice(names, func(i, j int) bool { return names[i] < names[j] })
 
 	var builder strings.Builder
 	builder.Grow(printBuilderCapacity)
 	builder.WriteByte('{')
 	for i, station := range names {
-		stationStats, _ := sumStationData.get(station.pos, station.name)
+		stationStats := sumStationData[station]
 		builder.WriteString(
 			fmt.Sprintf(
 				"%s=%.1f/%.1f/%.1f",
-				station.name,
+				station,
 				correctMagnitude(stationStats.min),
 				mean(stationStats.sum, stationStats.count),
 				correctMagnitude(stationStats.max),
@@ -372,146 +366,146 @@ func mean(sum sumT, count countT) float64 {
 
 // simpleMap is array backed map, it turns out that for this
 // very specific and simple case it is faster than most implementations.
-type simpleMap struct {
-	data     []bucket
-	capacity int
-	length   int
-}
+// type simpleMapa struct {
+// 	data     []bucket
+// 	capacity int
+// 	length   int
+// }
 
-type bucket struct {
-	items []bucketItem
-}
+// type bucket struct {
+// 	items []bucketItem
+// }
 
-type bucketItem struct {
-	stats *stats
-	name  stationName
-}
+// type bucketItem struct {
+// 	stats *stats
+// 	name  stationName
+// }
 
-func newSimpleMap(capacity int) simpleMap {
-	m := simpleMap{
-		capacity: capacity,
-		data:     make([]bucket, capacity),
-	}
-	return m
-}
+// func newSimpleMap(capacity int) *simpleMap {
+// 	m := simpleMap{
+// 		capacity: capacity,
+// 		data:     make([]bucket, capacity),
+// 	}
+// 	return &m
+// }
 
-func (m *simpleMap) len() int {
-	return m.length
-}
+// func (m *simpleMap) len() int {
+// 	return m.length
+// }
 
-func (m *simpleMap) Iter() iter.Seq2[uint32, bucketItem] {
-	return func(yield func(pos uint32, item bucketItem) bool) {
-		for bucketIndex, bucket := range m.data {
-			for _, bucketItem := range bucket.items {
-				if !yield(uint32(bucketIndex), bucketItem) {
-					return
-				}
-			}
-		}
-	}
-}
+// func (m *simpleMap) Iter() iter.Seq2[uint32, bucketItem] {
+// 	return func(yield func(pos uint32, item bucketItem) bool) {
+// 		for bucketIndex, bucket := range m.data {
+// 			for _, bucketItem := range bucket.items {
+// 				if !yield(uint32(bucketIndex), bucketItem) {
+// 					return
+// 				}
+// 			}
+// 		}
+// 	}
+// }
 
-// pos returns position in the data array so we can
-// avoid re-hashing the same value when doing get/set
-// in the same loop.
-func (m *simpleMap) pos(name stationName) uint32 {
-	return stationPos(name, m.capacity)
-}
+// // pos returns position in the data array so we can
+// // avoid re-hashing the same value when doing get/set
+// // in the same loop.
+// func (m *simpleMap) pos(name stationName) uint32 {
+// 	return stationPos(name, m.capacity)
+// }
 
-func (m *simpleMap) get(pos uint32, name stationName) (*stats, bool) {
-	bucket := m.data[pos]
-	// Fast-path for empty bucket.
-	if len(bucket.items) == 0 {
-		return nil, false
-	}
-	// Fast-path for bucket of 1.
-	if len(bucket.items) == 1 {
-		if bucket.items[0].name != name {
-			return nil, false
-		}
+// func (m *simpleMap) get(pos uint32, name stationName) (*stats, bool) {
+// 	bucket := m.data[pos]
+// 	// Fast-path for empty bucket.
+// 	if len(bucket.items) == 0 {
+// 		return nil, false
+// 	}
+// 	// Fast-path for bucket of 1.
+// 	if len(bucket.items) == 1 {
+// 		if bucket.items[0].name != name {
+// 			return nil, false
+// 		}
 
-		return bucket.items[0].stats, true
-	}
+// 		return bucket.items[0].stats, true
+// 	}
 
-	for _, item := range bucket.items {
-		if item.name == name {
-			return item.stats, true
-		}
-	}
+// 	for _, item := range bucket.items {
+// 		if item.name == name {
+// 			return item.stats, true
+// 		}
+// 	}
 
-	return nil, false
-}
+// 	return nil, false
+// }
 
-func (m *simpleMap) set(pos uint32, name stationName, st *stats) {
-	bucket := m.data[pos]
-	if len(bucket.items) == 0 {
-		// Empty bucket, add it there.
-		bucket.items = make([]bucketItem, 0, 10)
-		m.length++
-		bucket.items = append(bucket.items, bucketItem{
-			name:  name,
-			stats: st,
-		})
-		m.data[pos] = bucket
-		return
-	}
+// func (m *simpleMap) set(pos uint32, name stationName, st *stats) {
+// 	bucket := m.data[pos]
+// 	if len(bucket.items) == 0 {
+// 		// Empty bucket, add it there.
+// 		bucket.items = make([]bucketItem, 0, 10)
+// 		m.length++
+// 		bucket.items = append(bucket.items, bucketItem{
+// 			name:  name,
+// 			stats: st,
+// 		})
+// 		m.data[pos] = bucket
+// 		return
+// 	}
 
-	for i, item := range bucket.items {
-		// Non-empty bucket, find which item in bucket are we
-		// and set.
-		if item.name == name {
-			item.stats = st
-			bucket.items[i] = item
-			return
-		}
-	}
+// 	for i, item := range bucket.items {
+// 		// Non-empty bucket, find which item in bucket are we
+// 		// and set.
+// 		if item.name == name {
+// 			item.stats = st
+// 			bucket.items[i] = item
+// 			return
+// 		}
+// 	}
 
-	// Non-empty bucket, not yet in any of the items,
-	// append at the end.
-	m.length++
-	bucket.items = append(bucket.items, bucketItem{
-		name:  name,
-		stats: st,
-	})
-	m.data[pos] = bucket
-}
+// 	// Non-empty bucket, not yet in any of the items,
+// 	// append at the end.
+// 	m.length++
+// 	bucket.items = append(bucket.items, bucketItem{
+// 		name:  name,
+// 		stats: st,
+// 	})
+// 	m.data[pos] = bucket
+// }
 
-// stationPos calculates position in slice of our simple hashmap
-// given the stationName and capacity of the map.
-//
-// Original hashing function did 1 byte at a time (*101+byte)
-// and this one just batches it into single uint32 2 bytes at a time.
-// Thanks ChatGPT! And suprisingly it is much faster than the previous one
-// and than fnv1a, because we have to % by capacity even with fnv1a.
-//
-// // BenchmarkStationIdx-8   	21225350	        50.76 ns/op	       0 B/op	       0 allocs/op
-// // Benchmark101Hash-8   	20576145	        57.85 ns/op	       0 B/op	       0 allocs/op
-// // BenchmarkFnv-8   	17671476	        60.78 ns/op	       0 B/op	       0 allocs/op
-func stationPos(station stationName, capacity int) uint32 {
-	var (
-		hash uint32 = 2166136261
-		// Prime number used also in fnv1a.
-		prime32b uint32 = 16777619
-		//prime64b uint64 = 1099511628211
-	)
-	n := len(station)
+// // stationPos calculates position in slice of our simple hashmap
+// // given the stationName and capacity of the map.
+// //
+// // Original hashing function did 1 byte at a time (*101+byte)
+// // and this one just batches it into single uint32 2 bytes at a time.
+// // Thanks ChatGPT! And suprisingly it is much faster than the previous one
+// // and than fnv1a, because we have to % by capacity even with fnv1a.
+// //
+// // // BenchmarkStationIdx-8   	21225350	        50.76 ns/op	       0 B/op	       0 allocs/op
+// // // Benchmark101Hash-8   	20576145	        57.85 ns/op	       0 B/op	       0 allocs/op
+// // // BenchmarkFnv-8   	17671476	        60.78 ns/op	       0 B/op	       0 allocs/op
+// func stationPos(station stationName, capacity int) uint32 {
+// 	var (
+// 		hash uint32 = 2166136261
+// 		// Prime number used also in fnv1a.
+// 		prime32b uint32 = 16777619
+// 		//prime64b uint64 = 1099511628211
+// 	)
+// 	n := len(station)
 
-	// Process 2 bytes at a time.
-	// We can also process 8 and 4 bytes at a time, however there are short
-	// names (3 letters), and spec says names can be [1, 100] bytes.
-	// Doing 8 bytes is faster, but produces over hundred collisions on
-	// shorter names. This way it produces only 5 total collisions with
-	// max 2 per bucket. That is acceptable and provides overall speedup
-	// of 24% over the byte-by-byte hashing.
-	for i := 0; i+2 <= n; i += 2 {
-		// Load 2 bytes into a 64-bit integer.
-		block := uint32(station[i]) | uint32(station[i+1])<<8
+// 	// Process 2 bytes at a time.
+// 	// We can also process 8 and 4 bytes at a time, however there are short
+// 	// names (3 letters), and spec says names can be [1, 100] bytes.
+// 	// Doing 8 bytes is faster, but produces over hundred collisions on
+// 	// shorter names. This way it produces only 5 total collisions with
+// 	// max 2 per bucket. That is acceptable and provides overall speedup
+// 	// of 24% over the byte-by-byte hashing.
+// 	for i := 0; i+2 <= n; i += 2 {
+// 		// Load 2 bytes into a 64-bit integer.
+// 		block := uint32(station[i]) | uint32(station[i+1])<<8
 
-		// Hash calculation.
-		hash = hash*prime32b + block
-	}
+// 		// Hash calculation.
+// 		hash = hash*prime32b + block
+// 	}
 
-	// I tried to use fnv1a hash with this variant
-	// and fast modulo using bitwise operation (hash & capacity-1).
-	return hash % uint32(capacity)
-}
+// 	// I tried to use fnv1a hash with this variant
+// 	// and fast modulo using bitwise operation (hash & capacity-1).
+// 	return hash % uint32(capacity)
+// }
