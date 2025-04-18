@@ -43,7 +43,7 @@ Benchmark 1: target/benhoyt measurements.txt
   Range (min … max):    4.548 s …  6.752 s    10 runs
 ```
 
-### 10k unique station names
+### 10k unique station names
 ```shell
  λ hyperfine -w 2 'target/lunemec measurements3.txt'
 Benchmark 1: target/lunemec measurements3.txt
