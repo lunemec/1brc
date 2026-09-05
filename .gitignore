@@ -13,6 +13,7 @@ target/
 /*.out
 /*-timing.json
 profiles/
+/results/
 *.pprof
 *.checksum
 

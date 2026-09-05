@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::convert::TryInto;
 use std::ops::{Shl, Shr};
 use std::{array, io};
-use std::{collections::BTreeMap, fs::File};
+use std::fs::File;
 
 #[repr(C, align(64))]
 struct Stats {
@@ -158,8 +158,10 @@ fn main() -> io::Result<()> {
             },
         );
 
-    let mut sorted = BTreeMap::new();
-    sorted.extend(stats);
+    let mut sorted: Vec<_> = stats.into_iter().collect();
+    sorted.sort_unstable_by(|(left, _), (right, _)| {
+        left.encode_utf16().cmp(right.encode_utf16())
+    });
     print!("{{");
     let mut on_first = true;
     for (city, FinalStats { count, sum, min, max, .. }) in sorted {

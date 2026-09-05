@@ -2,4 +2,5 @@
 set -euo pipefail
 
 mkdir -p build
-go build -trimpath -ldflags='-s -w' -o build/go-lunemec .
+GOCACHE="$PWD/build/go-cache" \
+    go build -buildvcs=false -trimpath -ldflags='-s -w' -o build/go-lunemec .

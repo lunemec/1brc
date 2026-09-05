@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"unicode/utf8"
 	"unsafe"
 )
 
@@ -331,7 +332,7 @@ func printOutput(sumStationData simpleMap) {
 	for pos, bucketItem := range sumStationData.Iter() {
 		names = append(names, nameWithPosition{name: bucketItem.name, pos: pos})
 	}
-	sort.Slice(names, func(i, j int) bool { return names[i].name < names[j].name })
+	sort.Slice(names, func(i, j int) bool { return javaStringLess(names[i].name, names[j].name) })
 
 	var builder strings.Builder
 	builder.Grow(printBuilderCapacity)
@@ -356,6 +357,36 @@ func printOutput(sumStationData simpleMap) {
 		writer = io.Discard
 	}
 	fmt.Fprint(writer, builder.String())
+}
+
+// javaStringLess matches String.compareTo, which orders UTF-16 code units.
+// The challenge reference implementations use Java's TreeMap for output.
+func javaStringLess(left, right stationName) bool {
+	for len(left) > 0 && len(right) > 0 {
+		leftRune, leftSize := utf8.DecodeRuneInString(string(left))
+		rightRune, rightSize := utf8.DecodeRuneInString(string(right))
+
+		leftHigh, leftLow := utf16Units(leftRune)
+		rightHigh, rightLow := utf16Units(rightRune)
+		if leftHigh != rightHigh {
+			return leftHigh < rightHigh
+		}
+		if leftLow != rightLow {
+			return leftLow < rightLow
+		}
+
+		left = left[leftSize:]
+		right = right[rightSize:]
+	}
+	return len(left) < len(right)
+}
+
+func utf16Units(r rune) (high, low uint16) {
+	if r <= 0xffff {
+		return uint16(r), 0
+	}
+	r -= 0x10000
+	return uint16(0xd800 + r>>10), uint16(0xdc00 + r&0x3ff)
 }
 
 // correctMagnitude fixes back our floating points which we save

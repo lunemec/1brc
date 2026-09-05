@@ -200,6 +200,63 @@ divround(int64_t sum, int32_t cnt)
 }
 
 static int
+decode_utf8(const uint8_t *text, uint32_t *rune)
+{
+	if (*text < 0x80) {
+		*rune = *text;
+		return 1;
+	}
+	if ((*text & 0xe0) == 0xc0) {
+		*rune = ((uint32_t)(text[0] & 0x1f) << 6) |
+			(uint32_t)(text[1] & 0x3f);
+		return 2;
+	}
+	if ((*text & 0xf0) == 0xe0) {
+		*rune = ((uint32_t)(text[0] & 0x0f) << 12) |
+			((uint32_t)(text[1] & 0x3f) << 6) |
+			(uint32_t)(text[2] & 0x3f);
+		return 3;
+	}
+	*rune = ((uint32_t)(text[0] & 0x07) << 18) |
+		((uint32_t)(text[1] & 0x3f) << 12) |
+		((uint32_t)(text[2] & 0x3f) << 6) |
+		(uint32_t)(text[3] & 0x3f);
+	return 4;
+}
+
+static int
+compare_names_utf16(const uint8_t *left, uint8_t left_len,
+	const uint8_t *right, uint8_t right_len)
+{
+	while (left_len && right_len) {
+		uint32_t left_rune;
+		uint32_t right_rune;
+		uint8_t left_size = (uint8_t)decode_utf8(left, &left_rune);
+		uint8_t right_size = (uint8_t)decode_utf8(right, &right_rune);
+
+		uint16_t left_high = left_rune <= 0xffff ? (uint16_t)left_rune :
+			(uint16_t)(0xd800 + ((left_rune - 0x10000) >> 10));
+		uint16_t right_high = right_rune <= 0xffff ? (uint16_t)right_rune :
+			(uint16_t)(0xd800 + ((right_rune - 0x10000) >> 10));
+		if (left_high != right_high)
+			return left_high < right_high ? -1 : 1;
+
+		uint16_t left_low = left_rune <= 0xffff ? 0 :
+			(uint16_t)(0xdc00 + ((left_rune - 0x10000) & 0x3ff));
+		uint16_t right_low = right_rune <= 0xffff ? 0 :
+			(uint16_t)(0xdc00 + ((right_rune - 0x10000) & 0x3ff));
+		if (left_low != right_low)
+			return left_low < right_low ? -1 : 1;
+
+		left += left_size;
+		left_len -= left_size;
+		right += right_size;
+		right_len -= right_size;
+	}
+	return left_len ? 1 : right_len ? -1 : 0;
+}
+
+static int
 compare(const void *a, const void *b)
 {
 	struct station *x = (struct station *)a;
@@ -212,12 +269,7 @@ compare(const void *a, const void *b)
 	else if (y->cnt == 0)
 		res = -1;
 	else {
-		uint8_t n1 = x->nname;
-		uint8_t n2 = y->nname;
-		uint8_t minn = n1 < n2 ? n1 : n2;
-		res = memcmp(x->name, y->name, minn);
-		if (res == 0)
-			res = (int)n1 - (int)n2;
+		res = compare_names_utf16(x->name, x->nname, y->name, y->nname);
 	}
 	return res;
 }

@@ -11,6 +11,7 @@ implementation has an optional build script and a required run script.
 ## Requirements
 
 - Bash
+- `jq`
 - Go 1.23 or newer
 - [hyperfine](https://github.com/sharkdp/hyperfine)
 - OpenJDK 21 for the Java JVM reference
@@ -28,29 +29,39 @@ For an implementation named `<id>`:
 
 The wrapper owns the temporary `measurements.txt` symlink, so third-party
 implementations can retain the filename expected by the original challenge.
+All runners execute in a disposable workspace; validation never removes or
+replaces a repository-root `measurements.txt`.
 
 Available implementations:
 
 - `go-lunemec`
+- `java-baseline` (correctness and oracle generation only)
 - `java-thomaswue-jvm`
 - `java-thomaswue-native` (requires GraalVM Native Image)
 - `c-matt-re`
 - `rust-mtopolnik`
 
-Reference source revisions and the two correctness fixes needed for the C and
-Rust fixtures are documented in [`third_party/README.md`](third_party/README.md).
+Reference source revisions and local correctness changes are documented in
+[`third_party/README.md`](third_party/README.md).
 
 ## Validate correctness
 
 ```sh
 ./bench.sh validate \
+    java-baseline \
     go-lunemec \
     java-thomaswue-jvm \
     c-matt-re \
     rust-mtopolnik
 ```
 
-Every selected implementation must match every expected sample output exactly.
+Every selected implementation first runs the pinned upstream `test.sh` and
+`tocsv.sh`, then must match every expected sample output byte-for-byte. The
+strict pass includes local rounding and supplementary-Unicode ordering cases
+that are not in the original suite.
+
+`./test_harness.sh` checks that passing and deliberately broken adapters, plus
+oracle generation, leave a repository-root `measurements.txt` untouched.
 
 Run the generated stress suite separately. It covers 10,000 mostly 96–100 byte
 UTF-8 station names, long files with diverse UTF-8 names, and aggregates large
@@ -67,9 +78,9 @@ enough to overflow a 32-bit sum:
 
 This is a correctness gate only; it does not invoke Hyperfine.
 
-The inputs and trusted outputs are generated under `build/stress/`. To validate
-any other corpus without timing it, place its oracle beside it with the same
-base name and run:
+The inputs are generated under `build/stress/`; the slow Java baseline creates
+their trusted outputs. To validate any other corpus without timing it, place
+its oracle beside it with the same base name and run:
 
 ```sh
 ./bench.sh verify measurements_10K_1B.txt go-lunemec rust-mtopolnik
@@ -100,15 +111,24 @@ it has the same expected output as the canonical input. `CreateMeasurements2`
 and `CreateMeasurementsFast` are alternative ways to create the canonical
 corpus rather than separate validation cases.
 
+The pinned upstream generators are intentionally unseeded. A newly generated
+corpus will have different bytes and must receive its own oracle and checksum
+manifest; the committed manifests identify the retained local corpora.
+
 ## Establish or refresh a full baseline
 
 Generate the original one-billion-row corpus as `measurements_1B.txt`, then
 create its trusted output once as `measurements_1B.out` using an independent
-reference implementation.
+reference implementation. Oracle generation also writes a checksum manifest
+for the dataset and output. Existing files are never replaced implicitly; use
+`--replace` when intentionally refreshing both files.
 
 ```sh
 ./generate_measurements.sh
-shasum -a 256 -c measurements_1B.sha256
+./generate_oracle.sh measurements_1B.txt
+
+# Only when deliberately refreshing an existing oracle:
+./generate_oracle.sh --replace measurements_1B.txt
 
 ./bench.sh compare measurements_1B.txt \
     go-lunemec \
@@ -117,16 +137,28 @@ shasum -a 256 -c measurements_1B.sha256
     rust-mtopolnik
 ```
 
-Before timing, the wrapper builds each implementation, validates the sample
-suite, and compares its full output with `measurements_1B.out`. The correctness
-runs also warm the filesystem cache. Hyperfine then performs ten timed runs by
-default and saves its raw JSON under `results/`.
+Before timing, the wrapper verifies the dataset and oracle checksums, builds
+each implementation, runs both validation suites, and compares its full output
+with `measurements_1B.out`. Hyperfine then performs ten timed runs by default.
+Each timed output is compared with the oracle before the next run.
+
+The default balanced order splits those ten runs between a forward adapter pass
+and a reverse adapter pass. `WARMUPS` applies to each pass. Use `ORDER=forward`
+or `ORDER=reverse` only when deliberately collecting a single-order result.
 
 Override the run and Hyperfine warm-up counts when needed:
 
 ```sh
 RUNS=20 WARMUPS=2 ./bench.sh compare measurements_1B.txt go-lunemec
 ```
+
+Each comparison writes raw Hyperfine JSON, a tab-separated statistical summary,
+and metadata under `results/`. The summary includes the upstream-style mean
+after dropping the fastest and slowest observations, median, standard
+deviation, coefficient of variation, and a warning above 3% variation. Metadata
+records the corpus and oracle hashes, Git state, command order, system and power
+state, toolchains, and adapter artifact hashes. Only wall-clock measurements are
+reported because the Thomas JVM launcher creates a worker process.
 
 Reference results are valid only for the recorded hardware, OS, toolchains,
 source revisions, and protocol. Rerun them after any of those change and once

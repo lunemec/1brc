@@ -2,11 +2,19 @@ package main
 
 import (
 	"bytes"
+	"sort"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestJavaStringLess(t *testing.T) {
+	names := []stationName{"\ue000", "B", "😀", "A", "AA"}
+	sort.Slice(names, func(i, j int) bool { return javaStringLess(names[i], names[j]) })
+
+	assert.Equal(t, []stationName{"A", "AA", "B", "😀", "\ue000"}, names)
+}
 
 var (
 	stationNames = []stationName{
