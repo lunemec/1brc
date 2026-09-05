@@ -59,6 +59,8 @@ create its trusted output once as `measurements_1B.out` using an independent
 reference implementation.
 
 ```sh
+./generate_measurements.sh
+
 ./bench.sh compare measurements_1B.txt \
     go-lunemec \
     java-thomaswue-jvm \
