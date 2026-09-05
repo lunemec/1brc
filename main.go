@@ -27,7 +27,7 @@ var (
 	kiB = 1024
 	MiB = kiB * kiB
 
-	defaultMeasurementsFile = "../../../../measurements.txt"
+	defaultMeasurementsFile = "measurements.txt"
 	maxStations             = 10_000
 	chunkSize               = 6 * MiB
 
