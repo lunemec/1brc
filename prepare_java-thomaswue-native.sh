@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+native=build/java-thomaswue/native
+source=third_party/java-thomaswue/CalculateAverage_thomaswue.java
+if [[ -x "$native" && "$native" -nt "$source" && "$native" -nt "$0" ]]; then
+    exit 0
+fi
+
 if ! command -v native-image >/dev/null; then
     sdkman_dir=${SDKMAN_DIR:-"$HOME/.sdkman"}
     graal_bin="$sdkman_dir/candidates/java/21.0.2-graal/bin"
@@ -23,5 +29,5 @@ native-image \
     --gc=epsilon \
     -H:-GenLoopSafepoints \
     -cp build/java-thomaswue/classes \
-    -o build/java-thomaswue/native \
+    -o "$native" \
     dev.morling.onebrc.CalculateAverage_thomaswue

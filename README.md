@@ -60,6 +60,7 @@ reference implementation.
 
 ```sh
 ./generate_measurements.sh
+shasum -a 256 -c measurements_1B.sha256
 
 ./bench.sh compare measurements_1B.txt \
     go-lunemec \

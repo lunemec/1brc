@@ -190,11 +190,13 @@ fmtval(char *buf, int32_t val)
 static int32_t
 divround(int64_t sum, int32_t cnt)
 {
-	/* IEEE 754 roundTowardPositive (ceiling) */
-	if (sum >= 0)
-		return (int32_t)((sum + cnt - 1) / cnt);
-	else
-		return (int32_t)(sum / cnt);
+	int64_t quotient = sum / cnt;
+	int64_t remainder = sum % cnt;
+	if (remainder < 0) {
+		quotient--;
+		remainder += cnt;
+	}
+	return (int32_t)(quotient + (remainder * 2 >= cnt));
 }
 
 static int
