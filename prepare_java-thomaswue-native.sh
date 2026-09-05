@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-command -v native-image >/dev/null || {
-    echo "native-image is required for java-thomaswue-native" >&2
-    exit 1
-}
+if ! command -v native-image >/dev/null; then
+    sdkman_dir=${SDKMAN_DIR:-"$HOME/.sdkman"}
+    graal_bin="$sdkman_dir/candidates/java/21.0.2-graal/bin"
+    if [[ -x "$graal_bin/native-image" ]]; then
+        export PATH="$graal_bin:$PATH"
+    else
+        echo "GraalVM 21.0.2 native-image is required for java-thomaswue-native" >&2
+        exit 1
+    fi
+fi
 
 ./prepare_java-thomaswue-jvm.sh
 
