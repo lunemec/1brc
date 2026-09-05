@@ -52,6 +52,29 @@ Rust fixtures are documented in [`third_party/README.md`](third_party/README.md)
 
 Every selected implementation must match every expected sample output exactly.
 
+Run the generated stress suite separately. It covers 10,000 mostly 96–100 byte
+UTF-8 station names, long files with diverse UTF-8 names, and aggregates large
+enough to overflow a 32-bit sum:
+
+```sh
+./bench.sh stress \
+    go-lunemec \
+    java-thomaswue-jvm \
+    java-thomaswue-native \
+    c-matt-re \
+    rust-mtopolnik
+```
+
+This is a correctness gate only; it does not invoke Hyperfine.
+
+The inputs and trusted outputs are generated under `build/stress/`. To validate
+any other corpus without timing it, place its oracle beside it with the same
+base name and run:
+
+```sh
+./bench.sh verify measurements_10K_1B.txt go-lunemec rust-mtopolnik
+```
+
 ## Establish or refresh a full baseline
 
 Generate the original one-billion-row corpus as `measurements_1B.txt`, then
