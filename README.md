@@ -13,7 +13,10 @@ implementation has an optional build script and a required run script.
 - Bash
 - Go 1.23 or newer
 - [hyperfine](https://github.com/sharkdp/hyperfine)
-- The toolchains required by whichever reference implementations are selected
+- OpenJDK 21 for the Java JVM reference
+- An Apple Silicon C11 compiler for the pinned AArch64 C reference
+- Rust and Cargo
+- GraalVM 21.0.2 `native-image` only for the optional Java native reference
 
 ## Adapter convention
 
@@ -26,12 +29,25 @@ For an implementation named `<id>`:
 The wrapper owns the temporary `measurements.txt` symlink, so third-party
 implementations can retain the filename expected by the original challenge.
 
-The repository's Go implementation is named `go-lunemec`.
+Available implementations:
+
+- `go-lunemec`
+- `java-thomaswue-jvm`
+- `java-thomaswue-native` (requires GraalVM Native Image)
+- `c-matt-re`
+- `rust-mtopolnik`
+
+Reference source revisions and the two correctness fixes needed for the C and
+Rust fixtures are documented in [`third_party/README.md`](third_party/README.md).
 
 ## Validate correctness
 
 ```sh
-./bench.sh validate go-lunemec
+./bench.sh validate \
+    go-lunemec \
+    java-thomaswue-jvm \
+    c-matt-re \
+    rust-mtopolnik
 ```
 
 Every selected implementation must match every expected sample output exactly.
@@ -43,7 +59,11 @@ create its trusted output once as `measurements_1B.out` using an independent
 reference implementation.
 
 ```sh
-./bench.sh compare measurements_1B.txt go-lunemec <other-id>...
+./bench.sh compare measurements_1B.txt \
+    go-lunemec \
+    java-thomaswue-jvm \
+    c-matt-re \
+    rust-mtopolnik
 ```
 
 Before timing, the wrapper builds each implementation, validates the sample
@@ -60,6 +80,15 @@ RUNS=20 ./bench.sh compare measurements_1B.txt go-lunemec
 Reference results are valid only for the recorded hardware, OS, toolchains,
 source revisions, and protocol. Rerun them after any of those change and once
 more before publishing a final cross-language comparison.
+
+The Thomas Würthinger leaderboard entry is a GraalVM native image, not a normal
+JVM run. Keep `java-thomaswue-jvm` and `java-thomaswue-native` as separate
+results. Once `native-image` is installed, validate and include the latter like
+any other adapter:
+
+```sh
+./bench.sh validate java-thomaswue-native
+```
 
 ## Go tuning loop
 
