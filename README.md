@@ -75,6 +75,31 @@ base name and run:
 ./bench.sh verify measurements_10K_1B.txt go-lunemec rust-mtopolnik
 ```
 
+The original README has one distinct bonus corpus: the 10K Key Set, containing
+one billion rows across 10,000 station names. Generate it and its independent
+baseline output once:
+
+```sh
+./generate_measurements.sh 10k
+./generate_oracle.sh measurements_10K_1B.txt
+```
+
+Then validate both original one-billion-row corpora without running Hyperfine:
+
+```sh
+./bench.sh validate-full \
+    go-lunemec \
+    java-thomaswue-jvm \
+    java-thomaswue-native \
+    c-matt-re \
+    rust-mtopolnik
+```
+
+The README's 32-core bonus is a hardware configuration, not another corpus, so
+it has the same expected output as the canonical input. `CreateMeasurements2`
+and `CreateMeasurementsFast` are alternative ways to create the canonical
+corpus rather than separate validation cases.
+
 ## Establish or refresh a full baseline
 
 Generate the original one-billion-row corpus as `measurements_1B.txt`, then

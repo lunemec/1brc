@@ -9,6 +9,7 @@ Usage:
   ./bench.sh validate <implementation>...
   ./bench.sh stress <implementation>...
   ./bench.sh verify <dataset.txt> <implementation>...
+  ./bench.sh validate-full <implementation>...
   ./bench.sh compare <dataset.txt> <implementation>...
 EOF
     exit 1
@@ -189,7 +190,11 @@ case "$action" in
     stress)
         generate_stress_inputs
         failed=0
-        datasets=(build/stress/*.txt)
+        datasets=(
+            build/stress/measurements-10000-long-utf8.txt
+            build/stress/measurements-long-utf8.txt
+            build/stress/measurements-sum-overflow.txt
+        )
         for implementation in "$@"; do
             if ! prepare "$implementation"; then
                 echo "prepare failed: $implementation" >&2
@@ -214,6 +219,26 @@ case "$action" in
         dataset=$1
         shift
         verify_dataset "$dataset" "$@"
+        ;;
+    validate-full)
+        failed=0
+        for checksum in measurements_1B.sha256 measurements_10K_1B.sha256; do
+            [[ -f "$checksum" ]] || {
+                echo "checksum file not found: $checksum" >&2
+                exit 1
+            }
+            shasum -a 256 -c "$checksum"
+        done
+        for dataset in measurements_1B.txt measurements_10K_1B.txt; do
+            if ! verify_dataset "$dataset" "$@"; then
+                failed=1
+            fi
+        done
+        if [[ "$failed" -ne 0 ]]; then
+            echo "full-corpus validation failed" >&2
+            exit 1
+        fi
+        echo "all full-corpus validations passed"
         ;;
     compare)
         [[ $# -ge 2 ]] || usage

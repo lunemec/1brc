@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"iter"
-	"math"
 	"os"
 	"runtime"
 	"sort"
@@ -367,7 +366,17 @@ func correctMagnitude[T minT | maxT | sumT](n T) float64 {
 }
 
 func mean(sum sumT, count countT) float64 {
-	return math.Round(float64(sum)/float64(count)) / 10
+	divisor := sumT(count)
+	quotient := sum / divisor
+	remainder := sum % divisor
+	if remainder < 0 {
+		quotient--
+		remainder += divisor
+	}
+	if remainder*2 >= divisor {
+		quotient++
+	}
+	return float64(quotient) / 10
 }
 
 // simpleMap is array backed map, it turns out that for this

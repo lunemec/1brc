@@ -18,3 +18,4 @@ profiles/
 
 # Keep the small full-corpus oracle if one is generated.
 !/measurements_1B.out
+!/measurements_10K_1B.out

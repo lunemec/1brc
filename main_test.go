@@ -271,18 +271,22 @@ func TestSumStationData(t *testing.T) {
 }
 
 func TestMean(t *testing.T) {
-	want := float64(18.1)
-	got := mean(sumT(11277704), 62452)
-
-	if want != got {
-		t.Errorf("TestMean, got: %+v, want: %+v", got, want)
+	tests := []struct {
+		name  string
+		sum   sumT
+		count countT
+		want  float64
+	}{
+		{name: "ordinary", sum: 11277704, count: 62452, want: 18.1},
+		{name: "positive tie", sum: 50, count: 4, want: 1.3},
+		{name: "negative tie", sum: -50, count: 4, want: -1.2},
+		{name: "negative below tie", sum: -51, count: 4, want: -1.3},
 	}
 
-	want = float64(1.3)
-	got = mean(sumT(50), 4)
-
-	if want != got {
-		t.Errorf("TestMean, got: %+v, want: %+v", got, want)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, mean(tt.sum, tt.count))
+		})
 	}
 }
 

@@ -1,0 +1,4 @@
+NegativeTie;-1.6
+NegativeTie;-1.7
+PositiveTie;22.8
+PositiveTie;22.9

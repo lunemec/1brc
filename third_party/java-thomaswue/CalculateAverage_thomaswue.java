@@ -355,11 +355,23 @@ public class CalculateAverage_thomaswue {
         }
 
         public String toString() {
-            return round(((double) min) / 10.0) + "/" + round((((double) sum) / 10.0) / count) + "/" + round(((double) max) / 10.0);
+            return format(min) + "/" + format(roundedMean(sum, count)) + "/" + format(max);
         }
 
-        private static double round(double value) {
-            return Math.round(value * 10.0) / 10.0;
+        private static long roundedMean(long sum, int count) {
+            long quotient = sum / count;
+            long remainder = sum % count;
+            if (remainder < 0) {
+                quotient--;
+                remainder += count;
+            }
+            return quotient + (remainder * 2 >= count ? 1 : 0);
+        }
+
+        private static String format(long value) {
+            boolean negative = value < 0;
+            long absolute = Math.abs(value);
+            return (negative ? "-" : "") + absolute / 10 + "." + absolute % 10;
         }
 
         private void accumulate(Result other) {
