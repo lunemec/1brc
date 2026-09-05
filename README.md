@@ -122,10 +122,10 @@ suite, and compares its full output with `measurements_1B.out`. The correctness
 runs also warm the filesystem cache. Hyperfine then performs ten timed runs by
 default and saves its raw JSON under `results/`.
 
-Override the run count when needed:
+Override the run and Hyperfine warm-up counts when needed:
 
 ```sh
-RUNS=20 ./bench.sh compare measurements_1B.txt go-lunemec
+RUNS=20 WARMUPS=2 ./bench.sh compare measurements_1B.txt go-lunemec
 ```
 
 Reference results are valid only for the recorded hardware, OS, toolchains,

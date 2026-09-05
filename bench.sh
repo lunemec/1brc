@@ -246,6 +246,7 @@ case "$action" in
         shift
         expected="${dataset%.txt}.out"
         runs=${RUNS:-10}
+        warmups=${WARMUPS:-0}
 
         [[ -f "$dataset" ]] || {
             echo "dataset not found: $dataset" >&2
@@ -257,6 +258,10 @@ case "$action" in
         }
         [[ "$runs" =~ ^[1-9][0-9]*$ ]] || {
             echo "RUNS must be a positive integer" >&2
+            exit 1
+        }
+        [[ "$warmups" =~ ^[0-9]+$ ]] || {
+            echo "WARMUPS must be a non-negative integer" >&2
             exit 1
         }
         command -v hyperfine >/dev/null || {
@@ -273,7 +278,7 @@ case "$action" in
 
         mkdir -p results
         result="results/$(date +%Y%m%d-%H%M%S).json"
-        hyperfine_args=(--warmup 0 --runs "$runs" --export-json "$result")
+        hyperfine_args=(--warmup "$warmups" --runs "$runs" --export-json "$result")
         for implementation in "$@"; do
             hyperfine_args+=(--command-name "$implementation" "./calculate_average_${implementation}.sh > /dev/null")
         done
