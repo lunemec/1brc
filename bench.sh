@@ -586,10 +586,10 @@ case "$action" in
             check_output "$implementation" "$dataset" "$expected"
         done
 
-        mkdir -p results
         timestamp=$(date -u +%Y%m%d-%H%M%S)
         dataset_name=$(basename "${dataset%.txt}")
-        prefix="$repo_dir/results/${timestamp}-${dataset_name}"
+        prefix="$tmp_dir/${timestamp}-${dataset_name}"
+        final_prefix="$repo_dir/results/${timestamp}-${dataset_name}"
         metadata="$prefix.meta.txt"
         summary="$prefix.summary.tsv"
         expected_absolute=$(absolute_path "$expected")
@@ -623,6 +623,20 @@ case "$action" in
         esac
 
         write_summary "$summary" "${result_files[@]}"
+        mkdir -p "$repo_dir/results"
+        final_result_files=()
+        for result in "${result_files[@]}"; do
+            final_result="$final_prefix${result#"$prefix"}"
+            mv "$result" "$final_result"
+            final_result_files+=("$final_result")
+        done
+        final_summary="$final_prefix.summary.tsv"
+        final_metadata="$final_prefix.meta.txt"
+        mv "$summary" "$final_summary"
+        mv "$metadata" "$final_metadata"
+        summary="$final_summary"
+        metadata="$final_metadata"
+        result_files=("${final_result_files[@]}")
         echo "summary: $summary"
         if command -v column >/dev/null; then
             column -t -s $'\t' "$summary"
