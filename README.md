@@ -153,7 +153,8 @@ RUNS=20 WARMUPS=2 ./bench.sh compare measurements_1B.txt go-lunemec
 ```
 
 Each comparison writes raw Hyperfine JSON, a tab-separated statistical summary,
-and metadata under `results/`. The summary includes the upstream-style mean
+and metadata under `results/`. Set `RESULTS_DIR` to place final artifacts outside
+the repository. The summary includes the upstream-style mean
 after dropping the fastest and slowest observations, median, standard
 deviation, coefficient of variation, and a warning above 3% variation. Metadata
 records the corpus and oracle hashes, Git state, command order, system and power

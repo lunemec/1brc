@@ -588,8 +588,9 @@ case "$action" in
 
         timestamp=$(date -u +%Y%m%d-%H%M%S)
         dataset_name=$(basename "${dataset%.txt}")
+        results_dir=${RESULTS_DIR:-"$repo_dir/results"}
         prefix="$tmp_dir/${timestamp}-${dataset_name}"
-        final_prefix="$repo_dir/results/${timestamp}-${dataset_name}"
+        final_prefix="$results_dir/${timestamp}-${dataset_name}"
         metadata="$prefix.meta.txt"
         summary="$prefix.summary.tsv"
         expected_absolute=$(absolute_path "$expected")
@@ -623,7 +624,7 @@ case "$action" in
         esac
 
         write_summary "$summary" "${result_files[@]}"
-        mkdir -p "$repo_dir/results"
+        mkdir -p "$results_dir"
         final_result_files=()
         for result in "${result_files[@]}"; do
             final_result="$final_prefix${result#"$prefix"}"
