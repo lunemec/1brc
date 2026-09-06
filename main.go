@@ -2,9 +2,11 @@ package main
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"iter"
+	"math/bits"
 	"os"
 	"runtime"
 	"sort"
@@ -227,23 +229,41 @@ func chunkReader(chunks chan chunk) simpleMap {
 }
 
 func parseLine(data []byte) (int, stationName, measurement) {
-	newlineIdx := bytes.IndexByte(data, '\n')
-	if newlineIdx == -1 {
+	const (
+		semicolon = uint64(0x3b3b3b3b3b3b3b3b)
+		ones      = uint64(0x0101010101010101)
+		highBits  = uint64(0x8080808080808080)
+	)
+
+	separatorIdx := 0
+	for len(data)-separatorIdx >= 8 {
+		word := binary.LittleEndian.Uint64(data[separatorIdx:]) ^ semicolon
+		// A high bit remains in each byte where word was zero (the semicolon).
+		matches := (word - ones) & ^word & highBits
+		if matches != 0 {
+			separatorIdx += bits.TrailingZeros64(matches) / 8
+			break
+		}
+		separatorIdx += 8
+	}
+	for separatorIdx < len(data) && data[separatorIdx] != ';' {
+		separatorIdx++
+	}
+	if separatorIdx+4 >= len(data) {
 		return -1, "", 0
 	}
 
-	// Because the measurement value can be 9.9 or -99.9 max, the ; must be 3 to 5 bytes before
-	// the \n.
-	// This way is ~20% faster than another bytes.IndexByte().
-	var separatorIdx int
-	if data[newlineIdx-4] == ';' {
-		separatorIdx = newlineIdx - 4
-	} else if len(data[:newlineIdx]) >= 6 && data[newlineIdx-6] == ';' {
-		separatorIdx = newlineIdx - 6
-	} else if len(data[:newlineIdx]) >= 5 {
-		// If its not 3th or 5th byte from the end, it must be 4th.
-		separatorIdx = newlineIdx - 5
-	} else {
+	newlineIdx := separatorIdx + 4
+	if data[separatorIdx+1] == '-' {
+		newlineIdx++
+	}
+	if newlineIdx >= len(data) {
+		return -1, "", 0
+	}
+	if data[newlineIdx-2] != '.' {
+		newlineIdx++
+	}
+	if newlineIdx >= len(data) || data[newlineIdx] != '\n' {
 		return -1, "", 0
 	}
 

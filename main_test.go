@@ -370,6 +370,8 @@ func BenchmarkStationIdx(b *testing.B) {
 func BenchmarkRun(b *testing.B) {
 	bench = true
 	for range b.N {
-		run(defaultMeasurementsFile)
+		if err := run(defaultMeasurementsFile); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
