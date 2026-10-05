@@ -130,12 +130,31 @@ for the dataset and output. Existing files are never replaced implicitly; use
 # Only when deliberately refreshing an existing oracle:
 ./generate_oracle.sh --replace measurements_1B.txt
 
+./bench.sh null-control measurements_1B.txt go-lunemec
+
 ./bench.sh compare measurements_1B.txt \
     go-lunemec \
     java-thomaswue-jvm \
     c-matt-re \
     rust-mtopolnik
 ```
+
+Run the null control once after the machine is quiet and before comparing real
+implementations. It preconditions the selected implementation for 60 seconds,
+then benchmarks the same unchanged artifact under two labels in isolated
+`A-B-B-A` blocks without cooldowns. Each block defaults to two warmups and five
+measured runs. The wrapper verifies exact output, checks that the artifact did
+not change, records a system and thermal snapshot before every block, and exits
+with status 2 when label or order drift exceeds 1%. Override only the duration
+or sample count when deliberately changing the protocol:
+
+```sh
+PRECONDITION_SECONDS=90 RUNS=5 WARMUPS=2 \
+    ./bench.sh null-control measurements_1B.txt go-lunemec
+```
+
+Null-control JSON, logs, block statistics, drift analysis, health snapshots,
+and metadata are written under `results/`.
 
 Before timing, the wrapper verifies the dataset and oracle checksums, builds
 each implementation, runs both validation suites, and compares its full output
@@ -185,6 +204,8 @@ Use the full executable benchmark as the deciding metric:
 
 Use Go microbenchmarks and profiles only to explain an observed result. Change
 one thing at a time and retain the Hyperfine JSON for each meaningful version.
+Accepted, rejected, and queued changes are tracked in
+[`EXPERIMENTS.md`](EXPERIMENTS.md).
 
 ## Challenge contract
 

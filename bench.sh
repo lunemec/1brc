@@ -11,6 +11,7 @@ Usage:
   ./bench.sh stress <implementation>...
   ./bench.sh verify <dataset.txt> <implementation>...
   ./bench.sh validate-full <implementation>...
+  ./bench.sh null-control <dataset.txt> <implementation>
   ./bench.sh compare <dataset.txt> <implementation>...
 EOF
     exit 1
@@ -470,6 +471,134 @@ write_summary() {
     ' "$@" > "$summary"
 }
 
+precondition_implementation() {
+    local implementation=$1
+    local expected=$2
+    local seconds=$3
+    local output="$tmp_dir/precondition.out"
+    local started=$SECONDS
+    local deadline=$((started + seconds))
+
+    precondition_runs=0
+    if [[ "$seconds" -eq 0 ]]; then
+        precondition_elapsed_seconds=0
+        return
+    fi
+
+    echo "preconditioning $implementation for at least $seconds seconds"
+    while :; do
+        run_implementation "$implementation" > "$output"
+        cmp -s "$expected" "$output" || {
+            echo "incorrect output while preconditioning: $implementation" >&2
+            return 1
+        }
+        precondition_runs=$((precondition_runs + 1))
+        [[ "$SECONDS" -ge "$deadline" ]] && break
+    done
+    precondition_elapsed_seconds=$((SECONDS - started))
+}
+
+capture_health_snapshot() {
+    local output=$1
+    local block=$2
+
+    {
+        echo "[$block]"
+        date -u +%Y-%m-%dT%H:%M:%SZ
+        uptime
+        command -v pmset >/dev/null && pmset -g batt || true
+        command -v pmset >/dev/null && pmset -g therm || true
+        command -v vm_stat >/dev/null && vm_stat || true
+        command -v sysctl >/dev/null && sysctl vm.swapusage 2>/dev/null || true
+        if [[ $(uname -s) == Darwin ]] && command -v top >/dev/null; then
+            top -l 2 -s 1 -n 15 -o cpu -stats pid,command,cpu,state || true
+        fi
+        echo
+    } >> "$output" 2>&1
+}
+
+benchmark_null_block() {
+    local block=$1
+    local label=$2
+    local implementation=$3
+    local result=$4
+    local log=$5
+    local expected=$6
+    local output="$tmp_dir/timed-output.out"
+    local expected_quoted output_quoted conclude
+    local args=(
+        --warmup "$warmups"
+        --runs "$runs"
+        --export-json "$result"
+        --command-name "$label"
+    )
+
+    printf -v expected_quoted '%q' "$expected"
+    printf -v output_quoted '%q' "$output"
+    conclude="cmp -s $expected_quoted $output_quoted"
+    args+=(--conclude "$conclude")
+
+    echo "null-control block $block: $label"
+    (cd "$run_dir" && hyperfine "${args[@]}" \
+        "./calculate_average_${implementation}.sh > $output_quoted") | tee "$log"
+}
+
+write_null_analysis() {
+    local analysis=$1
+    local threshold=$2
+    shift 2
+
+    jq -s --argjson threshold "$threshold" '
+        def mean($values): $values | add / length;
+        def absolute: if . < 0 then -. else . end;
+        def stats($raw; $block):
+            ($raw.results[0].times) as $times
+            | ($times | length) as $n
+            | mean($times) as $mean
+            | (if $n > 1 then
+                   ([$times[] | . - $mean | . * .] | add / ($n - 1) | sqrt)
+               else 0 end) as $stddev
+            | {
+                block: $block,
+                label: $raw.results[0].command,
+                times: $times,
+                runs: $n,
+                mean_seconds: $mean,
+                cv_percent: (if $mean == 0 then 0 else $stddev / $mean * 100 end)
+              };
+
+        [
+            stats(.[0]; "A1"),
+            stats(.[1]; "B1"),
+            stats(.[2]; "B2"),
+            stats(.[3]; "A2")
+        ] as $blocks
+        | ($blocks[0].times + $blocks[3].times) as $a_times
+        | ($blocks[1].times + $blocks[2].times) as $b_times
+        | ($blocks[0].times + $blocks[1].times) as $first_half
+        | ($blocks[2].times + $blocks[3].times) as $second_half
+        | ((mean($b_times) / mean($a_times) - 1) * 100) as $label_bias
+        | ((mean($second_half) / mean($first_half) - 1) * 100) as $half_drift
+        | (($blocks[3].mean_seconds / $blocks[0].mean_seconds - 1) * 100) as $a_drift
+        | (($blocks[2].mean_seconds / $blocks[1].mean_seconds - 1) * 100) as $b_drift
+        | ([$label_bias, $half_drift, $a_drift, $b_drift]
+            | map(absolute) | max) as $max_drift
+        | {
+            schema: "1brc-null-control-v1",
+            blocks: $blocks,
+            label_bias_percent: $label_bias,
+            second_half_drift_percent: $half_drift,
+            same_label_a_drift_percent: $a_drift,
+            same_label_b_drift_percent: $b_drift,
+            gate: {
+                threshold_percent: $threshold,
+                max_abs_drift_percent: $max_drift,
+                pass: ($max_drift <= $threshold)
+            }
+          }
+    ' "$@" > "$analysis"
+}
+
 case "$action" in
     validate)
         for implementation in "$@"; do
@@ -533,6 +662,144 @@ case "$action" in
             exit 1
         fi
         echo "all full-corpus validations passed"
+        ;;
+    null-control)
+        [[ $# -eq 2 ]] || usage
+        dataset=$1
+        implementation=$2
+        expected="${dataset%.txt}.out"
+        runs=${RUNS:-5}
+        warmups=${WARMUPS:-2}
+        precondition_seconds=${PRECONDITION_SECONDS:-60}
+        drift_threshold=1
+
+        [[ "$runs" =~ ^[1-9][0-9]*$ ]] || {
+            echo "RUNS must be a positive integer" >&2
+            exit 1
+        }
+        [[ "$warmups" =~ ^[0-9]+$ ]] || {
+            echo "WARMUPS must be a non-negative integer" >&2
+            exit 1
+        }
+        [[ "$precondition_seconds" =~ ^[0-9]+$ ]] || {
+            echo "PRECONDITION_SECONDS must be a non-negative integer" >&2
+            exit 1
+        }
+        command -v hyperfine >/dev/null || {
+            echo "hyperfine is required" >&2
+            exit 1
+        }
+        command -v jq >/dev/null || {
+            echo "jq is required" >&2
+            exit 1
+        }
+        verify_checksum_pair "$dataset"
+        prepare "$implementation"
+        validate "$implementation"
+        echo "validating $implementation: $dataset"
+        check_output "$implementation" "$dataset" "$expected"
+
+        adapter_runner="calculate_average_${implementation}.sh"
+        artifact=$(artifact_path "$implementation" || echo "$adapter_runner")
+        artifact_hash_before=$(hash_artifact "$artifact")
+        runner_hash_before=$(shasum -a 256 "$adapter_runner" | awk '{print $1}')
+
+        timestamp=$(date -u +%Y%m%d-%H%M%S)
+        dataset_name=$(basename "${dataset%.txt}")
+        results_dir=${RESULTS_DIR:-"$repo_dir/results"}
+        prefix="$tmp_dir/${timestamp}-${dataset_name}-${implementation}-null-control"
+        final_prefix="$results_dir/${timestamp}-${dataset_name}-${implementation}-null-control"
+        health="$prefix.health.txt"
+        analysis="$prefix.analysis.json"
+        metadata="$prefix.meta.txt"
+        expected_absolute=$(absolute_path "$expected")
+        result_files=()
+        log_files=()
+
+        link_input "$dataset"
+        precondition_implementation "$implementation" "$expected_absolute" "$precondition_seconds"
+
+        blocks=(a1 b1 b2 a2)
+        labels=(null-a null-b null-b null-a)
+        for ((i = 0; i < ${#blocks[@]}; i++)); do
+            block=${blocks[i]}
+            label=${labels[i]}
+            result="$prefix-$block.json"
+            log="$prefix-$block.log"
+            capture_health_snapshot "$health" "${block^^}:$label"
+            benchmark_null_block "${block^^}" "$label" "$implementation" \
+                "$result" "$log" "$expected_absolute"
+            result_files+=("$result")
+            log_files+=("$log")
+        done
+
+        artifact_hash_after=$(hash_artifact "$artifact")
+        runner_hash_after=$(shasum -a 256 "$adapter_runner" | awk '{print $1}')
+        write_null_analysis "$analysis" "$drift_threshold" "${result_files[@]}"
+
+        checksum="${dataset%.txt}.sha256"
+        {
+            echo "schema=1brc-null-control-v1"
+            echo "created_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "dataset=$dataset"
+            echo "dataset_sha256=$(checksum_hash_for "$checksum" "$dataset")"
+            echo "oracle=$expected"
+            echo "oracle_sha256=$(checksum_hash_for "$checksum" "$expected")"
+            echo "implementation=$implementation"
+            echo "artifact=$artifact"
+            echo "artifact_sha256_before=$artifact_hash_before"
+            echo "artifact_sha256_after=$artifact_hash_after"
+            echo "runner_sha256_before=$runner_hash_before"
+            echo "runner_sha256_after=$runner_hash_after"
+            echo "runs_per_block=$runs"
+            echo "warmups_per_block=$warmups"
+            echo "precondition_seconds_requested=$precondition_seconds"
+            echo "precondition_seconds_actual=$precondition_elapsed_seconds"
+            echo "precondition_runs=$precondition_runs"
+            echo "cooldown_seconds=0"
+            echo "block_order=A1:null-a,B1:null-b,B2:null-b,A2:null-a"
+            echo "drift_threshold_percent=$drift_threshold"
+            echo "git_commit=$(git rev-parse HEAD)"
+            if [[ -n $(git status --porcelain --untracked-files=all) ]]; then
+                echo "git_dirty=true"
+            else
+                echo "git_dirty=false"
+            fi
+            echo "git_diff_sha256=$(git diff --binary HEAD | shasum -a 256 | awk '{print $1}')"
+            echo "harness_sha256=$(shasum -a 256 bench.sh | awk '{print $1}')"
+            uname -a
+            hyperfine --version
+            go version 2>&1 || true
+        } > "$metadata"
+
+        mkdir -p "$results_dir"
+        files=("${result_files[@]}" "${log_files[@]}" "$health" "$analysis" "$metadata")
+        final_files=()
+        for file in "${files[@]}"; do
+            final_file="$final_prefix${file#"$prefix"}"
+            mv "$file" "$final_file"
+            final_files+=("$final_file")
+        done
+
+        final_analysis="$final_prefix.analysis.json"
+        echo "analysis: $final_analysis"
+        jq -r '
+            (["block", "label", "runs", "mean_seconds", "cv_percent"] | @tsv),
+            (.blocks[] | [.block, .label, .runs, .mean_seconds, .cv_percent] | @tsv),
+            "gate\t\(.gate.pass)\tmax drift\t\(.gate.max_abs_drift_percent)%"
+        ' "$final_analysis"
+        echo "raw results: $(join_by_comma "${final_files[@]}")"
+
+        if [[ "$artifact_hash_before" != "$artifact_hash_after" ||
+              "$runner_hash_before" != "$runner_hash_after" ]]; then
+            echo "benchmark artifact changed during the null control" >&2
+            exit 1
+        fi
+        if [[ $(jq -r '.gate.pass' "$final_analysis") != true ]]; then
+            echo "null control failed the ${drift_threshold}% drift gate" >&2
+            exit 2
+        fi
+        echo "null control passed the ${drift_threshold}% drift gate"
         ;;
     compare)
         [[ $# -ge 2 ]] || usage
