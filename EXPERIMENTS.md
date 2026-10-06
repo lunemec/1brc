@@ -484,6 +484,11 @@ different execution contract and must be labelled accordingly.
    The bounded AVX2 generator is now validated but not promoted: confirmation
    gains of 0.861% standard and 0.047% extended miss the minimum-gain rule.
    See [the SIMD record](#go-simd-mask-validated-not-promoted-2026-10-06).
+   The subsequent pooled retry finds repeatable direct-production gains of
+   1.19–1.34% standard and 1.05–1.65% extended. It passes the numerical rule
+   but remains a research candidate because the small benefit does not justify
+   duplicated paths and an experimental build dependency. See
+   [the pooled retry](#pooled-mask-retries-retained-as-research-2026-10-06).
 5. **Recycle bounded chunk buffers after keys are owned.** Retain the accepted
    production parser and current producer/channel topology first; return each
    buffer only after its worker finishes. Bound the retained pool by worker
@@ -520,12 +525,17 @@ different execution contract and must be labelled accordingly.
    recycled buffers, not for every architecture. The old mmap comment is not a
    matched experiment against current code. Reprofile producer/wait/GC behavior
    after the allocation/lane changes before attributing any I/O gain.
+   After the pooled mask retry, a narrow static parallel ReadAt probe is the
+   next experiment, ahead of the larger staged-cursor refactor. Its concrete
+   control, coverage proof and decision criteria are recorded below.
 8. **Reprofile and then choose compiler/architecture work.** Revisit worker
    count and PGO after dependency/cache behavior changes. Compare scalar,
    batched SWAR, and SIMD generated code and profiles before extending SIMD to
    hashing/equality. Go 1.27 experimental SIMD supports amd64 and ARM64, but
    bounded tails and a scalar fallback remain necessary. The first Go SIMD
-   generator fails the production minimum-gain rule; GOAMD64=v3 is still unmeasured.
+   generator fails the production minimum-gain rule before pooling; its pooled
+   retry remains a research candidate on complexity grounds. GOAMD64=v3 is
+   still unmeasured.
 
 ### Prefix directory and compressed radix trie (2026-10-06)
 
@@ -1319,3 +1329,128 @@ station and independently count every consumed row. Revisit SIMD against a
 matching pooled control only as a separate experiment now that the producer
 allocation constraint has changed; parallel reusable ReadAt and mmap also
 remain separate comparisons.
+
+## Pooled mask retries retained as research (2026-10-06)
+
+The accepted pool and documentation are committed as `57591e7` (`perf: reuse
+bounded chunk buffers`). At the user's request, three subagents independently
+implemented/audited retries of exact scalar 64-byte batching and native AVX2.
+Both preserve the accepted producer/pool, owned keys, 32K/40-byte table,
+full fingerprint/equality, decoder/tails, unbuffered handoff and sixteen workers.
+Loans return after every mask row and scalar tail; unsupported builds/CPUs use
+the current pooled production fallback. Comments/examples remain in `main.go`.
+
+Four frozen variants distinguish normal `nodwarf5` production (**plain**),
+identical production with `nodwarf5,simd` (**matched**), scalar batching and
+AVX2. All use Go 1.27.1, `GOAMD64=v1`, PGO off, `GOMAXPROCS=16`, `GOGC=100`,
+and `GOMEMLIMIT=off`. Native dispatch occurs once per worker; the kernel
+inlines two bounded 32-byte loads/comparisons/mask reductions. Its worker frame
+is 328 bytes versus production's 272; the parser stays 56 bytes.
+
+Clean four-way screens use four cyclic orders plus their reverses: eight
+observations each, every position twice. Scalar batching is **7.367% slower
+standard / 6.475% slower extended** than matched production and also exceeds
+the 1% regression bound against plain. Reject it before precision work.
+Matched/SIMD/SIMD/matched confirmation improves 2.243%/2.954%, but matched
+production is itself 1.066%/0.506% slower than plain in the screens. Build-flag
+comparisons include possible code-layout effects; they do not isolate the
+compiler's cost. Adoption therefore uses direct normal-production confirmations.
+
+| Corpus / independent direct window | Normal production mean | SIMD mean | Runtime reduction | Fresh null max drift |
+| --- | ---: | ---: | ---: | ---: |
+| Standard / 3 | 1.917895 s | 1.895101 s | 1.189% | 0.482% |
+| Standard / 4 | 1.911743 s | 1.886221 s | 1.335% | 0.287% |
+| Extended / 3 | 2.415082 s | 2.375341 s | 1.646% | 0.853% |
+| Extended / 4 | 2.376231 s | 2.351397 s | 1.045% | 0.220% |
+
+Each has its own real-host preflight/monitor, 60-second conditioning, fresh
+control-only ABBA null and plain/SIMD/SIMD/plain confirmation. Each block
+excludes two warmups and measures five runs; means contain ten runs per variant.
+All inputs remain fully resident, oracles match and source/build hashes stay
+fixed. Plain/SIMD order drifts in table order are +0.131%/-0.111%,
+-0.235%/+0.051%, +1.174%/-0.708%, and -0.852%/-0.258%. Adjacent ratios are
+0.98931/0.98692, 0.98524/0.98806, 0.99283/0.97437, and 0.98661/0.99251.
+No outliers are removed. The first extended SIMD CV is higher at 1.40%; both
+orders and the independent repeat still favor SIMD.
+
+The guard retains 0.5 total background CPU cores, 0.25 per process and existing
+IO/paging limits; fresh null/order limits remain 2%. Preserve and exclude both
+interrupted windows in full: Chromium interrupted the first extended screen;
+nvim/golangci-lint/gopls interrupted a later dual-control standard window.
+Its completed first comparison is also excluded. Subsequent windows split
+controls and prioritize two independent direct-production confirmations per
+corpus. Matched-flag replication is not claimed or substituted for those.
+
+The numerical rule passes: both standard repeats exceed 1%, with no corpus
+regression. **Retain SIMD as a validated research candidate, not production.**
+Standard savings are about 23–26 ms, extended 25–40 ms. Duplicated paths,
+CPU dispatch and experimental SIMD build support need a larger benefit under
+the existing complexity rule. Root application code remains committed pooled
+production. Retrying was worthwhile: changed producer/GC behavior exposes a
+modest worker improvement, although allocation overhead is not established as
+its sole cause. Do not retry unchanged scalar batching or the old wider-entry
+second-word design without a mechanism addressing their instruction/cache costs.
+
+| Separate user instructions per row | Plain | Matched | Scalar batch | SIMD |
+| --- | ---: | ---: | ---: | ---: |
+| Standard | 230.710 | 230.719 | 257.575 | 228.660 |
+| Extended | 257.074 | 257.076 | 281.785 | 246.649 |
+
+Grouped user cycles/instructions counters are 100% scheduled. SIMD versus plain
+removes about 0.89%/4.06% instructions and 2.13%/2.61% user cycles; scalar adds
+11.64%/9.61% instructions. These instrumented runs support mechanism analysis,
+not wall-time acceptance. CPU, allocation/heap/GC, goroutine, block, mutex,
+syscall and scheduler evidence is retained. Allocations stay about 131.8 MB
+standard / 136.6 MB extended across all variants, sampled RSS 146–153 MB,
+post-GC heap about 0.6 MB, and GC counts 3–4. Every full diagnostic count is
+exactly one billion rows, with at most seventeen pool buffers.
+
+Refreshed after-GC CPU classes include cleanup/reporting; stale pre-GC values
+remain available. SIMD idle capacity is 6.07%/6.85%, mean Running workers about
+14.3/14.1, producer send waits about 96/83 ms. Producer Syscall spans are
+1.583/2.067 seconds of 1.920/2.371-second traces. These states overlap worker
+execution and prove neither a fixed reader floor nor complete starvation.
+
+Unit/vet/race, default/AVX2-disabled paths, ARM64, exact/unaligned masks,
+protected-page bounds, poisoned-buffer ownership and stale/short EOF tests
+pass. Four variants each pass 28 small/adversarial and both full oracles;
+build/CPU fallbacks separately pass 56 small and four full comparisons plus two
+CPU-disabled billion-row counts. Final source/build/harness hashes match, and
+both candidate patches reconstruct every measured source hash from `57591e7`.
+
+Evidence: local ignored `results/research/20261006/pooled-mask-retry/` contains
+source/test snapshots and patches, frozen binaries, compiler/assembly, agent
+reviews, all validation/count/profile evidence, valid/excluded timing windows,
+`decision.json` and final verification. Transfer this directory explicitly.
+
+### Next: static parallel reusable ReadAt
+
+Source review favors genuinely phased two/three cursors; pipeline review favors
+a narrow reader probe first. Choose the reader probe to test serial copy/handoff
+cost while preserving the portable hot loop. The trace motivates the hypothesis;
+it does not predict a win.
+
+- Control: committed pooled plain production. Candidate: sixteen static,
+  contiguous newline-aligned file ranges, each worker owning one reusable
+  6 MiB buffer and its existing table. Keep parser/decoder/hash/owned keys,
+  worker count, target and PGO unchanged; remove the producer and work handoff.
+  Include boundary setup/cleanup in timing and record sixteen candidate buffers
+  versus the seventeen-buffer control bound.
+- Shared boundaries must partition `[0,fileSize)`. Diagnostic **consumed-byte**
+  ledgers must prove contiguous progression to every range end. Independently
+  count full rows and compare raw per-station counts/sums with the trusted
+  reference, as well as formatted output: totals can hide compensating losses.
+- Cover tiny ranges/chunks, names crossing reads, distinct/repeated stations
+  across every boundary, short final rows, truncation and EOF. Keep keys owned
+  before reuse; verify both full counts and coverage before timing.
+- Use unchanged quiet/null/order/replication rules. Separately profile user and
+  kernel CPU, grouped PMU, read/parse time, trace states/waits, context switches,
+  faults, residency, allocation/GC and anonymous memory.
+- Accepting the reader probe supplies the next cursor baseline. If cleanly
+  rejected, test a one-cursor refactor control followed by phased two/three
+  lanes on current production. Revalidate lookups after earlier insertions and
+  update same-station statistics sequentially; never write stale captured stats.
+- Keep mmap separate, initially with owned keys and the same parser/static
+  ranges. If copy costs persist after parallel reads with little wall benefit,
+  consider mmap before more cursor work. SIMD, prefix routing, wider key caches
+  and compiler flags remain separate experiments.

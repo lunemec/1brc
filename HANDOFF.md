@@ -87,6 +87,7 @@ Linux research uses a Ryzen 7 5800X desktop. Compare ratios within a session.
   [the SIMD record](EXPERIMENTS.md#go-simd-mask-validated-not-promoted-2026-10-06).
   Those producer/allocation traces motivated the accepted buffer experiment below.
 - Bounded buffer reuse is applied and committed on top of `ef7418a`.
+  The resulting commit is `57591e7` (`perf: reuse bounded chunk buffers`).
   Standard confirmation is 2.204872→1.926155 s (12.64% less runtime), extended
   3.049592→2.398277 s (21.36%). Both fresh null/order/real-host controls pass.
   A lazy producer-owned pool allocates at most seventeen 6 MiB buffers here;
@@ -104,9 +105,28 @@ Linux research uses a Ryzen 7 5800X desktop. Compare ratios within a session.
   collections, pre-GC idle ratios are stale. The retained analysis refreshes from
   the existing post-forced-GC snapshot and preserves raw values/old analyzer;
   endpoint includes cleanup/reporting. Refreshed pool GC capacity is below 0.1%.
-  Next isolate two/three cursors on this pooled baseline, preserving same-station
-  update order and exact row counts. SIMD revisit, parallel ReadAt and mmap are
-  separate experiments; keep the measured pool changes intact.
+  Keep the measured pool changes intact; subsequent retries and next steps are
+  recorded below.
+- Scalar/SIMD mask retries now use the committed pool. Independent subagents
+  implemented/audited both and reviewed producer/worker profiles. Scalar remains
+  slower (+7.37% standard/+6.48% extended against matched production). SIMD
+  passes the numerical rule in two independent direct normal-production windows
+  per corpus: standard -1.19%/-1.34%, extended -1.65%/-1.05%, all quiet/null/order
+  checks passing. Matched-flag gains of -2.24%/-2.95% overstate the practical
+  normal-build gain. Two interrupted windows are excluded in full and retained.
+  Keep SIMD as a validated research candidate: duplicated paths/experimental
+  build support need more than this small benefit under the complexity rule.
+  Root production stays at `57591e7`; sources/patches, exhaustive fallback/bounds/
+  ownership checks, all small/full oracles and independent counts, profiles,
+  six valid timing windows and decisions are in local ignored
+  `results/research/20261006/pooled-mask-retry/`. See
+  [the pooled retry and next experiment](EXPERIMENTS.md#pooled-mask-retries-retained-as-research-2026-10-06).
+  Next test static parallel reusable ReadAt: sixteen newline-aligned worker
+  ranges/6 MiB buffers with the current portable parser/table/owned names.
+  Prove consumed-byte coverage and raw station counts/sums, not just rounded
+  output or total rows. Include setup/cleanup and profile kernel/user CPU,
+  memory/GC, reads, scheduler/channel waits separately. If rejected, prioritize
+  staged two/three cursors with a one-lane control; mmap remains separate.
 - Read [README.md](README.md) for harness commands and [EXPERIMENTS.md](EXPERIMENTS.md)
   for the measurement rules, profile interpretation, experiment decisions, and
   prioritized backlog.
@@ -301,10 +321,12 @@ rerunning until it passes.
    Retain the accepted robust table, first-word reuse, bounded decoder and buffer pool.
    Exact two-word lookup, scalar batching and the first Go SIMD mask experiment
    fail their production timing criteria. Bounded buffer reuse is accepted and
-   committed. Next isolate staged cursors, then I/O variants;
-   revisit SIMD independently against a pooled control if useful.
+   committed as `57591e7`. Pooled retries retain SIMD as a validated research
+   candidate with modest gains, while scalar batching still regresses. Next
+   probe static parallel reusable ReadAt before the larger cursor refactor;
+   follow the detailed coverage/control plan in the latest experiment record.
    Existing prototype patches and builds
-   are retained under `results/research/20261005/`; do not reconstruct from
+   are retained under `results/research/20261005/` and `20261006/`; do not reconstruct from
    stale Mac branch names if these artifacts are available.
 3. Run Go tests/vet, pinned tests, stress/adversarial cases, independent full
    oracles, and row-count/range-coverage checks before timing a new scanner.
