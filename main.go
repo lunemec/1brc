@@ -255,7 +255,77 @@ func findEndIdx(data []byte, idx int) int {
 // chunkReader aggregates complete rows into a table owned by this worker.
 // For "Oslo;1.2\nOslo;-0.2\n", Oslo ends with count=2, sum=10, min=-2,
 // max=12; temperatures remain in tenths until output formatting.
+// supportsAVX2Masks is an architecture/build-specific feature check, inlined
+// here once per worker. When true, semicolonMask64AVX2 loads two bounded
+// 32-byte vectors, compares each byte with ';' and joins the two masks.
+// For "A;0.0\nB;1.0\n" followed by zero bytes, bits 1 and 7 produce 0x82.
+// Both loads require 64 in-slice bytes; short tails use parseLine. SIMD-disabled
+// and non-amd64 builds use the original pooled parser through chunkReaderScalar.
+// All mask rows and the final scalar tail finish before the chunk loan is
+// returned. A chunk ending in "A;0.0\nB;1." records only A, then releases
+// its complete backing buffer; a later ReadAt cannot alter its owned key.
 func chunkReader(chunks chan chunk) simpleMap {
+	if !supportsAVX2Masks() {
+		return chunkReaderScalar(chunks)
+	}
+	// Sadly even though we are reading much smaller chunk here,
+	// it is still likely we get all the station names.
+	out := newSimpleMap(maxStations)
+
+	for chunk := range chunks {
+
+		chunkView := chunk.data
+		rowStart, nextBlock, blockStart := 0, 0, 0
+		var delimiters uint64
+		for {
+			// Reuse every separator in the current sixty-four-byte block.
+			// A row may end beyond the block; temperature bytes contain no ';'.
+			for delimiters == 0 && len(chunk.data)-nextBlock >= 64 {
+				blockStart = nextBlock
+				delimiters = semicolonMask64AVX2(chunk.data[nextBlock:])
+				nextBlock += 64
+			}
+			var newlineIdx int
+			var name stationName
+			var measurement measurement
+			var firstWord uint64
+			if delimiters != 0 {
+				separator := blockStart + bits.TrailingZeros64(delimiters)
+				delimiters &= delimiters - 1
+				newlineIdx, name, measurement, firstWord = parseLineAtSeparator(chunkView, separator-rowStart)
+			} else {
+				// Keep an unfinished long name or a final short block intact.
+				newlineIdx, name, measurement, firstWord = parseLine(chunkView)
+			}
+			if newlineIdx == -1 {
+				break
+			}
+
+			var hash uint64
+			if len(name) <= 8 {
+				hash = bits.RotateLeft64(firstWord*0x517cc1b727220a95, 17)
+			} else {
+				hash = stationFingerprintLongFromWord(name, firstWord)
+			}
+			stationStats := out.homeHit(name, hash)
+			if stationStats == nil {
+				stationStats = out.findSlow(name, hash)
+			}
+			updateStats(stationStats, measurement)
+			// Save next line's start at current index+1 (step over \n).
+			rowStart += newlineIdx + 1
+			chunkView = chunk.data[rowStart:]
+		}
+		chunk.release()
+	}
+
+	return out
+}
+
+// chunkReaderScalar aggregates complete rows into a table owned by this worker.
+// For "Oslo;1.2\nOslo;-0.2\n", Oslo ends with count=2, sum=10, min=-2,
+// max=12; temperatures remain in tenths until output formatting.
+func chunkReaderScalar(chunks chan chunk) simpleMap {
 	// Sadly even though we are reading much smaller chunk here,
 	// it is still likely we get all the station names.
 	out := newSimpleMap(maxStations)
@@ -729,4 +799,102 @@ func (m *simpleMap) get(pos uint32, name stationName) (*stats, bool) {
 // argument is ignored because collision resolution belongs to find.
 func (m *simpleMap) set(_ uint32, name stationName, st *stats) {
 	*m.find(name) = *st
+}
+
+// parseLineAtSeparator decodes a row whose delimiter position was found by a
+// block mask. For "Oslo;-12.6\n", separatorIdx=4 returns
+// (10,"Oslo",-126,0x6f6c734f), just like parseLine. Names borrow data until
+// insertion clones them. First-word normalization and bounded numeric decoding
+// are identical to the scalar parser; short final rows keep its fallback.
+func parseLineAtSeparator(data []byte, separatorIdx int) (int, stationName, measurement, uint64) {
+	if separatorIdx < 0 {
+		return -1, "", 0, 0
+	}
+	var firstWord uint64
+	if len(data) >= 8 {
+		firstWord = binary.LittleEndian.Uint64(data)
+	}
+
+	if separatorIdx+4 >= len(data) {
+		return -1, "", 0, 0
+	}
+
+	name := stationName(unsafe.String(&data[0], len(data[:separatorIdx])))
+	// Preserve the exact first name word; delimiter, temperature and following
+	// row bytes must not participate in its fingerprint.
+	if separatorIdx < 8 {
+		if len(data) < 8 {
+			firstWord = stationWord(name)
+		} else {
+			// "Oslo;1.2" loads 0x322e313b6f6c734f; a four-byte mask
+			// keeps only 0x6f6c734f for the name fingerprint.
+			firstWord &= (uint64(1) << (separatorIdx * 8)) - 1
+		}
+	}
+
+	// Decode all four legal temperature layouts with one bounded 64-bit load.
+	// For "-12.6\n", the dot is byte 3 (bit 28 in the mask), signed=-1,
+	// aligned digit nibbles multiply into absolute=126, then sign gives -126.
+	// Extra bytes after the newline never enter the digit mask. Complete final
+	// rows have fewer than eight remaining bytes and use parseNumber below.
+	if len(data)-separatorIdx >= 9 {
+		temperatureWord := binary.LittleEndian.Uint64(data[separatorIdx+1:])
+		dotPos := bits.TrailingZeros64(^temperatureWord & 0x10101000)
+		if dotPos <= 28 {
+			newlineIdx := separatorIdx + dotPos/8 + 3
+			if data[newlineIdx] != '\n' {
+				return -1, "", 0, 0
+			}
+			signed := int64(^temperatureWord<<59) >> 63
+			digits := ((temperatureWord & ^(uint64(signed) & 0xff)) << (28 - dotPos)) & 0x0f000f0f00
+			absolute := int64((digits * 0x640a0001) >> 32 & 0x3ff)
+			value := measurement((absolute ^ signed) - signed)
+			return newlineIdx, name, value, firstWord
+		}
+	}
+
+	newlineIdx := separatorIdx + 4
+	if data[separatorIdx+1] == '-' {
+		newlineIdx++
+	}
+	if newlineIdx >= len(data) {
+		return -1, "", 0, 0
+	}
+	if data[newlineIdx-2] != '.' {
+		newlineIdx++
+	}
+	if newlineIdx >= len(data) || data[newlineIdx] != '\n' {
+		return -1, "", 0, 0
+	}
+
+	return newlineIdx, name, parseNumber(data[separatorIdx+1 : newlineIdx]), firstWord
+}
+
+// semicolonBits returns one exact low-byte bit per semicolon in an eight-byte
+// word: "A;0.0\nB;" produces 0x82 (byte offsets 1 and 7). For ";:", only
+// bit zero is set; unlike first-match zero detection, addition here cannot
+// propagate a borrow into the next byte and invent a delimiter.
+func semicolonBits(word uint64) uint64 {
+	const low = uint64(0x7f7f7f7f7f7f7f7f)
+	const high = uint64(0x8080808080808080)
+	word ^= 0x3b3b3b3b3b3b3b3b
+	matches := ^(((word & low) + low) | word | low) & high
+	return ((matches >> 7) * 0x0102040810204080) >> 56
+}
+
+// semicolonMask64 scans exactly sixty-four in-slice bytes and returns one bit
+// per delimiter. With "A;0.0\nB;1.0\n" at the start, bits 1 and 7 are set.
+// Eight exact byte masks are concatenated; no unsafe overread or native-endian
+// assumption is used. Callers handle slices shorter than sixty-four bytes with
+// the scalar parser. SIMD and scalar generators return the same exact bits.
+func semicolonMask64(data []byte) uint64 {
+	_ = data[63]
+	return semicolonBits(binary.LittleEndian.Uint64(data)) |
+		semicolonBits(binary.LittleEndian.Uint64(data[8:]))<<8 |
+		semicolonBits(binary.LittleEndian.Uint64(data[16:]))<<16 |
+		semicolonBits(binary.LittleEndian.Uint64(data[24:]))<<24 |
+		semicolonBits(binary.LittleEndian.Uint64(data[32:]))<<32 |
+		semicolonBits(binary.LittleEndian.Uint64(data[40:]))<<40 |
+		semicolonBits(binary.LittleEndian.Uint64(data[48:]))<<48 |
+		semicolonBits(binary.LittleEndian.Uint64(data[56:]))<<56
 }

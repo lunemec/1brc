@@ -478,17 +478,19 @@ different execution contract and must be labelled accordingly.
    retain SWAR fallback. Compare both the retained production parser and the
    rejected scalar batch control with matching experiment/target flags; beating
    scalar batching alone cannot justify promotion. Keep `GOAMD64=v1` for this
-   isolation and test a v3 target separately. SIMD key equality/hash work follows
-   only if profiles justify it. See [Go's architecture-specific SIMD design](https://go.dev/blog/archsimd)
+   isolation and test a v3 target separately. SIMD key equality/hash are now
+   explicit benchmark items in the
+   [reference-derived experiment matrix](#reference-derived-test-and-benchmark-items-2026-10-06).
+   See [Go's architecture-specific SIMD design](https://go.dev/blog/archsimd)
    and the retained API audit in `external/lehuyduc/go-transfer-plan.md`.
    The bounded AVX2 generator is now validated but not promoted: confirmation
    gains of 0.861% standard and 0.047% extended miss the minimum-gain rule.
    See [the SIMD record](#go-simd-mask-validated-not-promoted-2026-10-06).
    The subsequent pooled retry finds repeatable direct-production gains of
    1.19–1.34% standard and 1.05–1.65% extended. It passes the numerical rule
-   but remains a research candidate because the small benefit does not justify
-   duplicated paths and an experimental build dependency. See
-   [the pooled retry](#pooled-mask-retries-retained-as-research-2026-10-06).
+   and was initially retained as research on complexity grounds. The user later
+   requested promotion of the validated SIMD version. See
+   [the pooled retry](#pooled-mask-retries-and-simd-promotion-2026-10-06).
 5. **Recycle bounded chunk buffers after keys are owned.** Retain the accepted
    production parser and current producer/channel topology first; return each
    buffer only after its worker finishes. Bound the retained pool by worker
@@ -534,7 +536,8 @@ different execution contract and must be labelled accordingly.
    hashing/equality. Go 1.27 experimental SIMD supports amd64 and ARM64, but
    bounded tails and a scalar fallback remain necessary. The first Go SIMD
    generator fails the production minimum-gain rule before pooling; its pooled
-   retry remains a research candidate on complexity grounds. GOAMD64=v3 is
+   retry was initially parked on complexity grounds and then promoted at the
+   user's request. GOAMD64=v3 is
    still unmeasured.
 
 ### Prefix directory and compressed radix trie (2026-10-06)
@@ -1330,7 +1333,7 @@ matching pooled control only as a separate experiment now that the producer
 allocation constraint has changed; parallel reusable ReadAt and mmap also
 remain separate comparisons.
 
-## Pooled mask retries retained as research (2026-10-06)
+## Pooled mask retries and SIMD promotion (2026-10-06)
 
 The accepted pool and documentation are committed as `57591e7` (`perf: reuse
 bounded chunk buffers`). At the user's request, three subagents independently
@@ -1382,11 +1385,15 @@ controls and prioritize two independent direct-production confirmations per
 corpus. Matched-flag replication is not claimed or substituted for those.
 
 The numerical rule passes: both standard repeats exceed 1%, with no corpus
-regression. **Retain SIMD as a validated research candidate, not production.**
+regression. The initial engineering decision retained SIMD as a research candidate.
 Standard savings are about 23–26 ms, extended 25–40 ms. Duplicated paths,
 CPU dispatch and experimental SIMD build support need a larger benefit under
-the existing complexity rule. Root application code remains committed pooled
-production. Retrying was worthwhile: changed producer/GC behavior exposes a
+the existing complexity rule. The user subsequently requested committing the
+current SIMD implementation. Production therefore adopts the exact validated
+pooled AVX2 path and its scalar fallback; the adapter enables the experiment
+when supported, preserves other flags and honors explicit `nosimd`. This
+promotion reuses the existing measurements; no new timing is claimed.
+Retrying was worthwhile: changed producer/GC behavior exposes a
 modest worker improvement, although allocation overhead is not established as
 its sole cause. Do not retry unchanged scalar batching or the old wider-entry
 second-word design without a mechanism addressing their instruction/cache costs.
@@ -1430,7 +1437,8 @@ a narrow reader probe first. Choose the reader probe to test serial copy/handoff
 cost while preserving the portable hot loop. The trace motivates the hypothesis;
 it does not predict a win.
 
-- Control: committed pooled plain production. Candidate: sixteen static,
+- Control: committed production with its selected SIMD/scalar path. Candidate:
+  sixteen static,
   contiguous newline-aligned file ranges, each worker owning one reusable
   6 MiB buffer and its existing table. Keep parser/decoder/hash/owned keys,
   worker count, target and PGO unchanged; remove the producer and work handoff.
@@ -1454,3 +1462,62 @@ it does not predict a win.
   ranges. If copy costs persist after parallel reads with little wall benefit,
   consider mmap before more cursor work. SIMD, prefix routing, wider key caches
   and compiler flags remain separate experiments.
+
+### Reference-derived test and benchmark items (2026-10-06)
+
+Added at the user's request after comparing the fastest tested LE C++ and
+Thomas Java references. LE's delimiter generator is already measured in Go;
+the remaining hashing, equality and layout ideas require their own experiments.
+Java's scanner uses scalar 64-bit SWAR and genuinely phased cursors, rather
+than explicit AVX2 delimiter vectors. These are source-inspired hypotheses,
+not promised contributions to either reference's runtime.
+
+| Item | Isolated implementation/control | Tests and benchmark evidence |
+| --- | --- | --- |
+| Parallel reusable ReadAt | Current production versus sixteen static worker ranges with identical SIMD/scalar selection and parser/table and 6 MiB buffers; next experiment as detailed above | Consumed-byte coverage, independent full row counts/raw station totals, complete-process time, user/kernel CPU, read/parse time and channel/scheduler waits |
+| Direct mapped input | Same parser and static ranges, replacing only ReadAt/copying with mmap; keep keys owned initially | Mapping/unmapping included; page-aligned EOF, short tails and range coverage; faults, file-backed versus anonymous memory, copy cost and full time |
+| Java-style phased cursors | Equivalent one-lane refactor control, then genuinely staged two/three lanes; reader, decoder and table fixed | Exact interval partitioning, repeated same-station rows and insertion collisions; instructions/cycles/IPC, spills, bounds checks and worker occupancy |
+| SIMD station equality | Bounded 16/32-byte equality for longer names versus existing string/scalar equality at identical table/hash/layout; retain the current exact shortcut for names up to eight bytes | Equal prefixes with different lengths/suffixes, embedded zero bytes, UTF-8, vector boundaries and protected-page tails; inspect baseline/generated equality, compare lookup instructions and full time |
+| SIMD station hashing | Compare scalar and SIMD versions of the same full-name hash. If a vector-friendly hash needs a new algorithm, first isolate that scalar algorithm against production, then vectorize it | Every name byte must contribute; verify scalar/vector hash agreement and shared-prefix/adversarial distributions, probe counts, hash instructions and both full-corpus effects |
+| Hardware CRC32C hashing | Matt-re-inspired full-name CRC hashing as a separate hash candidate, independent of AVX2 scanning and any reader change | Preserve the current reversible short-key fingerprint, or replace hash-only short-key identity with exact name comparison; forced collisions/long shared prefixes, probe distribution and hash/lookup cycles |
+| LE-style inline keys and statistics | Scalar layout control with owned inline short keys and cold owned long-name storage, then SIMD equality at that identical layout; vary capacity/probe policy separately | Buffer-reuse ownership, long/shared-prefix names, entry stride/cache footprint, initialization, allocated/live bytes and GC; a wider entry or larger table must earn its cost on both corpora |
+| Fixed physical-core versus SMT workers | Eight versus sixteen workers on the surviving implementation, keeping algorithm/reader/build fixed; automatic cardinality selection is a later candidate | Both station distributions plus skew and late-discovered stations; full time, CPU capacity, memory, producer backpressure and waits; do not assume LE's sample heuristic transfers |
+| LE-style four-byte temperature word | Bounded four-byte nibble/multiply decoder against the accepted eight-byte decoder, keeping the same station path and scalar tails | Exhaustive legal temperatures including signed zero, truncation/EOF and newline advancement; decoder instructions and full time, not just a parser microbenchmark |
+
+For hashing experiments, a collision-resistant lookup still requires exact
+equality: the current up-to-eight-byte hash-plus-length shortcut relies on a
+specific reversible fingerprint. A replacement probabilistic hash cannot retain
+that identity proof automatically. Do not copy LE's first-16-byte-only hash or
+its original length-free equality; the corrected reference and common-prefix
+stress cases establish why exact length and full long-name verification matter.
+
+For SIMD equality, guard every load by the actual readable name/slice length,
+not allocation capacity or assumed padding. Mask short tails or use the scalar
+path, keep CPU/build fallbacks, and inspect the existing compiler/runtime string
+comparison before expecting custom SIMD to improve it. Avoid bundling cached
+key width, table capacity or hash changes into the equality experiment.
+
+Start with the static reader probe. Choose the ordering of mmap and phased
+cursors from its wall-time and copy/wait evidence; then use current profiles to
+prioritize the key/hash/layout items. Fixed worker counts and the alternate
+decoder remain independent comparisons. The previously rejected wider-entry
+second-word cache is not rerun unchanged: a new layout must isolate its stride
+cost and introduce a concrete new mechanism.
+
+Every candidate needs immutable builds and scalar controls, exact small/stress/
+adversarial outputs, full independent billion-row counts and both Java oracles.
+Reader/scanner changes additionally require consumed-byte coverage. SIMD builds
+need normal-production and matched-experiment controls, CPU-disabled/build
+fallback checks and bounded tails. Run full timing only when the live machine
+passes the unchanged quiet guard, with balanced cycling, fresh nulls and ABBA
+confirmation/repetition under the existing acceptance and complexity rules.
+Profile CPU/PMU, allocation/heap/GC, goroutine/channel/block/mutex, scheduler and
+syscall waits separately; include setup, cleanup and complete process exit.
+
+After individual mechanisms survive, benchmark deliberate combinations:
+accepted reader plus the preserved SIMD delimiter kernel; accepted layout plus
+SIMD equality/hash; and any surviving cursor/decoder combination. Compare each
+bundle with the current normal baseline and its matched build control. Measure
+the combined result anew; individual gains are not additive. This also tests
+whether sharing the SIMD infrastructure across useful operations can justify
+the SIMD dependency beyond the modest delimiter-only improvement.

@@ -14,6 +14,10 @@ implementation has an optional build script and a required run script.
 - Python 3.10 or newer for full-run host quietness monitoring
 - `jq`
 - Go 1.23 or newer
+- The Go adapter enables experimental SIMD when the installed compiler supports
+  it (Go 1.27 here), preserving other `GOEXPERIMENT` settings. AVX2 runs on
+  supported amd64 CPUs; other CPUs/builds use the scalar parser. Set
+  `GOEXPERIMENT=nodwarf5,nosimd` to select the scalar build on this machine.
 - [hyperfine](https://github.com/sharkdp/hyperfine)
 - OpenJDK 21 for the Java JVM reference
 - A C11 compiler with AArch64 CRC32C or x86-64 SSE4.2 support for the C reference

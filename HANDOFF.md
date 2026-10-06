@@ -114,19 +114,31 @@ Linux research uses a Ryzen 7 5800X desktop. Compare ratios within a session.
   per corpus: standard -1.19%/-1.34%, extended -1.65%/-1.05%, all quiet/null/order
   checks passing. Matched-flag gains of -2.24%/-2.95% overstate the practical
   normal-build gain. Two interrupted windows are excluded in full and retained.
-  Keep SIMD as a validated research candidate: duplicated paths/experimental
-  build support need more than this small benefit under the complexity rule.
-  Root production stays at `57591e7`; sources/patches, exhaustive fallback/bounds/
+  Initially retained as research on complexity grounds; the user subsequently
+  requested promotion and commitment of this exact validated SIMD version.
+  Production now includes the AVX2 path with the current pooled scalar fallback.
+  The adapter enables SIMD when the compiler supports it, preserves existing
+  experiment flags and honors explicit `nosimd`. Sources/patches, fallback/bounds/
   ownership checks, all small/full oracles and independent counts, profiles,
   six valid timing windows and decisions are in local ignored
   `results/research/20261006/pooled-mask-retry/`. See
-  [the pooled retry and next experiment](EXPERIMENTS.md#pooled-mask-retries-retained-as-research-2026-10-06).
+  [the pooled retry and next experiment](EXPERIMENTS.md#pooled-mask-retries-and-simd-promotion-2026-10-06).
   Next test static parallel reusable ReadAt: sixteen newline-aligned worker
   ranges/6 MiB buffers with the current portable parser/table/owned names.
   Prove consumed-byte coverage and raw station counts/sums, not just rounded
   output or total rows. Include setup/cleanup and profile kernel/user CPU,
   memory/GC, reads, scheduler/channel waits separately. If rejected, prioritize
   staged two/three cursors with a one-lane control; mmap remains separate.
+- The user explicitly added the remaining C/C++/Java mechanisms as test and
+  benchmark items: mapped input, phased cursors, SIMD station equality and
+  full-name hashing, hardware CRC hashing, inline key/stat layouts, fixed
+  eight/sixteen workers and the four-byte temperature decoder. Read the
+  [reference-derived matrix](EXPERIMENTS.md#reference-derived-test-and-benchmark-items-2026-10-06)
+  for isolated controls, correctness checks, profiles and later combination
+  benchmarks. Static parallel ReadAt stays next. Preserve exact short-key
+  identity when changing hashes; avoid prefix-only hashes, length-free equality
+  and unbounded vector loads. Full timing always requires the unchanged live
+  quiet guard, fresh nulls and both full-corpus checks.
 - Read [README.md](README.md) for harness commands and [EXPERIMENTS.md](EXPERIMENTS.md)
   for the measurement rules, profile interpretation, experiment decisions, and
   prioritized backlog.
@@ -321,10 +333,12 @@ rerunning until it passes.
    Retain the accepted robust table, first-word reuse, bounded decoder and buffer pool.
    Exact two-word lookup, scalar batching and the first Go SIMD mask experiment
    fail their production timing criteria. Bounded buffer reuse is accepted and
-   committed as `57591e7`. Pooled retries retain SIMD as a validated research
-   candidate with modest gains, while scalar batching still regresses. Next
+   committed as `57591e7`. The user requested promotion of the validated pooled
+   SIMD path despite its modest gains; scalar batching still regresses. Next
    probe static parallel reusable ReadAt before the larger cursor refactor;
    follow the detailed coverage/control plan in the latest experiment record.
+   The reference-derived matrix explicitly tracks later SIMD equality/hash,
+   CRC, layout, worker-count, decoder and combination benchmarks.
    Existing prototype patches and builds
    are retained under `results/research/20261005/` and `20261006/`; do not reconstruct from
    stale Mac branch names if these artifacts are available.
