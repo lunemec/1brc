@@ -773,3 +773,72 @@ Next lookup experiment: exact two-word identity and parser-word reuse on the
 accepted table. Compact prefix routing and a compressed radix trie remain
 separate backlog entries; numeric decoding, scalar batching, Go SIMD and I/O
 experiments retain their separate comparisons.
+
+
+## Accepted parser-word reuse (2026-10-06)
+
+Applied on top of committed robust-table baseline `f8a90a5`. The parser peels
+its first SWAR block and returns the already loaded first station word. Names
+shorter than eight bytes are masked to exclude the delimiter, temperature and
+following row; complete inputs shorter than eight bytes use the bounded word
+fallback. Short lookup hashes that cached word, and long hashing continues from
+it. The fingerprint mapping, 32K/40-byte table, owned keys, exact long equality,
+numeric decoder, reader/channel topology and sixteen workers remain fixed.
+This experiment does not add a second cached word or change key identity.
+
+`stationPos` had no production caller: its only use was an obsolete benchmark.
+The function is removed and the benchmark now measures `stationFingerprint`.
+Inline comments in `main.go` explain the new parser contract, byte masking,
+hashes, table entries, ownership and probing, with concrete input/output examples.
+
+| Corpus/window | Baseline mean | Reuse mean | Runtime reduction | Fresh null max drift |
+| --- | ---: | ---: | ---: | ---: |
+| Standard 1B / 6 | 2.444292 s | 2.311884 s | 5.417% | 0.299% |
+| 10K-station 1B / 2 | 3.267638 s | 3.172713 s | 2.905% | 0.259% |
+| 10K-station 1B / 3, independent repeat | 3.269167 s | 3.140641 s | 3.931% | 0.777% |
+
+Each window uses a fresh real-host preflight and continuous monitoring,
+60-second preconditioning, baseline A/B/B/A null blocks, six alternating
+variant-order screen rounds and baseline/reuse/reuse/baseline confirmation.
+Each null/confirmation block has two excluded warmups and five measured runs;
+means pool ten measurements per variant per window. The predeclared null and
+confirmation-order bound is 2%; the CPU guard remains 0.5 background cores total
+and 0.25 per process. Standard baseline/reuse order drift is -0.013%/-0.016%;
+extended window 2 is -0.556%/+0.009%, and repeat is -0.146%/-0.667%.
+Adjacent-pair gains agree in sign. The first extended effect fell below the
+predeclared 3% replication threshold, so window 3 independently repeated it;
+both complete windows are retained and reported. No accepted window has a
+measured-run host violation. Outputs are exact, artifacts unchanged, and active
+inputs remain 100% resident. Ratios are within-window comparisons.
+
+Earlier windows remain excluded: standard preflight 1 failed I/O pressure;
+windows 2–4 stopped for CPU noise; window 5 passed its null but Discord interrupted
+the screen. Extended window 1 passed its null but editor/short-lived CPU work
+interrupted the screen. After the user paused Chromium, the complete windows
+above passed with unchanged limits. No interrupted screen is adoption evidence.
+
+Separate grouped counters, both 100% scheduled, show instructions/row
+273.409→254.401 standard and 302.044→284.906 extended, with IPC 1.912→1.976
+and 1.564→1.639. `homeHit` remains inlined. The caller shrinks, while the parser
+stack frame grows from 48 to 56 bytes; compiler/assembly and differential hash
+tests are retained. Allocation volume remains 13.822/17.098 GB, about 99.8% chunk
+buffers, with approximately 0.63/0.65 MB live heap after GC. Candidate runtime
+GC/idle capacity is 2.91%/10.78% standard and 2.91%/15.86% extended in instrumented
+diagnostics. Cumulative worker channel waits overlap; time with every worker
+waiting while the producer is in a syscall is only 0.36/0.70 ms. Runtime mutex
+and profiling-harness sleeps do not establish an application table lock or sleep.
+
+Both variants pass unit tests, vet, race, Linux ARM64 cross-build, all 28 small/
+adversarial exact outputs and both checksum-backed full 1B oracles. Separate
+diagnostic artifacts independently count exactly 1B rows on both corpora for
+each variant. New tests cover name lengths 1–100, UTF-8, NUL/length distinctions,
+shared first words, temperature forms, following-row independence and truncated
+tails. The documented repository source has the same executable Go AST as the
+measured candidate; comments are added only to `main.go`.
+
+Evidence: local ignored `results/research/20261006/parser-word/`, including
+`acceptance.json`, source/binary hashes, compiler/assembly, `validation/`,
+`diagnostics/`, `runtime-summary.json`, complete timing windows and host monitors.
+Next isolate exact two-word identity, reusing the second scanner word while
+preserving full-name fallback. Prefix routing/trie, bounded numeric decoding,
+scalar mask batching, Go SIMD and reader/allocation work remain separate steps.

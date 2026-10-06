@@ -80,21 +80,21 @@ func TestParseLine(t *testing.T) {
 Ljubljana;-24.3
 `)
 
-	newlineIdx, name, msrmnt := parseLine(data)
+	newlineIdx, name, msrmnt, _ := parseLine(data)
 
 	assert.Equal(t, 14, newlineIdx)
 	assert.Equal(t, stationName("Bridgetown"), name)
 	assert.Equal(t, measurement(93), msrmnt)
 
 	data = data[newlineIdx+1:]
-	newlineIdx, name, msrmnt = parseLine(data)
+	newlineIdx, name, msrmnt, _ = parseLine(data)
 
 	assert.Equal(t, 13, newlineIdx)
 	assert.Equal(t, stationName("Ürümqi"), name)
 	assert.Equal(t, measurement(-3), msrmnt)
 
 	data = data[newlineIdx+1:]
-	newlineIdx, name, msrmnt = parseLine(data)
+	newlineIdx, name, msrmnt, _ = parseLine(data)
 
 	assert.Equal(t, 15, newlineIdx)
 	assert.Equal(t, stationName("Ljubljana"), name)
@@ -116,7 +116,7 @@ func BenchmarkParseLine(b *testing.B) {
 	data := testData
 
 	for range b.N {
-		newlineIdx, name, msrmnt = parseLine(data)
+		newlineIdx, name, msrmnt, _ = parseLine(data)
 	}
 
 	NewlineIdx = newlineIdx
@@ -329,18 +329,16 @@ func TestSimpleMapGet(t *testing.T) {
 	assert.Empty(t, got)
 }
 
-var Idx uint32
+var Fingerprint uint64
 
-// BenchmarkStationIdx-8   	36248710	        31.03 ns/op	       0 B/op	       0 allocs/op
-func BenchmarkStationIdx(b *testing.B) {
-	var idx uint32
+func BenchmarkStationFingerprint(b *testing.B) {
+	var fingerprint uint64
 	for range b.N {
-		for _, stationName := range stationNames {
-			idx = stationPos(stationName, maxStations)
+		for _, name := range stationNames {
+			fingerprint = stationFingerprint(name)
 		}
 	}
-
-	Idx = idx
+	Fingerprint = fingerprint
 }
 
 func BenchmarkRun(b *testing.B) {

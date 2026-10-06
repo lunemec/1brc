@@ -198,6 +198,9 @@ func findEndIdx(data []byte, idx int) int {
 	return chunkEnd + 1
 }
 
+// chunkReader aggregates complete rows into a table owned by this worker.
+// For "Oslo;1.2\nOslo;-0.2\n", Oslo ends with count=2, sum=10, min=-2,
+// max=12; temperatures remain in tenths until output formatting.
 func chunkReader(chunks chan chunk) simpleMap {
 	// Sadly even though we are reading much smaller chunk here,
 	// it is still likely we get all the station names.
@@ -208,16 +211,16 @@ func chunkReader(chunks chan chunk) simpleMap {
 			chunkView = chunk.data
 		)
 		for {
-			newlineIdx, name, measurement := parseLine(chunkView)
+			newlineIdx, name, measurement, firstWord := parseLine(chunkView)
 			if newlineIdx == -1 {
 				break
 			}
 
 			var hash uint64
 			if len(name) <= 8 {
-				hash = bits.RotateLeft64(stationWord(name)*0x517cc1b727220a95, 17)
+				hash = bits.RotateLeft64(firstWord*0x517cc1b727220a95, 17)
 			} else {
-				hash = stationFingerprintLong(name)
+				hash = stationFingerprintLongFromWord(name, firstWord)
 			}
 			stationStats := out.homeHit(name, hash)
 			if stationStats == nil {
@@ -232,7 +235,13 @@ func chunkReader(chunks chan chunk) simpleMap {
 	return out
 }
 
-func parseLine(data []byte) (int, stationName, measurement) {
+// parseLine decodes the first newline-terminated row and returns its newline
+// index, a borrowed station name, temperature in tenths and normalized first
+// name word. For "Oslo;-12.6\nParis;0.0\n", it returns
+// (10, "Oslo", -126, 0x6f6c734f); delimiter/temperature bytes are masked out.
+// An incomplete row such as "Oslo;1.2" returns (-1, "", 0, 0). The name aliases
+// data; the table clones it on insertion before the input buffer can be reused.
+func parseLine(data []byte) (int, stationName, measurement, uint64) {
 	const (
 		semicolon = uint64(0x3b3b3b3b3b3b3b3b)
 		ones      = uint64(0x0101010101010101)
@@ -240,21 +249,33 @@ func parseLine(data []byte) (int, stationName, measurement) {
 	)
 
 	separatorIdx := 0
-	for len(data)-separatorIdx >= 8 {
-		word := binary.LittleEndian.Uint64(data[separatorIdx:]) ^ semicolon
-		// A high bit remains in each byte where word was zero (the semicolon).
+	var firstWord uint64
+	if len(data) >= 8 {
+		// XOR turns a semicolon byte (0x3b) into zero; the zero-byte mask
+		// locates its first occurrence, e.g. byte 4 in "Oslo;1.2".
+		firstWord = binary.LittleEndian.Uint64(data)
+		word := firstWord ^ semicolon
 		matches := (word - ones) & ^word & highBits
 		if matches != 0 {
-			separatorIdx += bits.TrailingZeros64(matches) / 8
-			break
+			separatorIdx = bits.TrailingZeros64(matches) / 8
+		} else {
+			separatorIdx = 8
+			for len(data)-separatorIdx >= 8 {
+				word := binary.LittleEndian.Uint64(data[separatorIdx:]) ^ semicolon
+				matches := (word - ones) & ^word & highBits
+				if matches != 0 {
+					separatorIdx += bits.TrailingZeros64(matches) / 8
+					break
+				}
+				separatorIdx += 8
+			}
 		}
-		separatorIdx += 8
 	}
 	for separatorIdx < len(data) && data[separatorIdx] != ';' {
 		separatorIdx++
 	}
 	if separatorIdx+4 >= len(data) {
-		return -1, "", 0
+		return -1, "", 0, 0
 	}
 
 	newlineIdx := separatorIdx + 4
@@ -262,17 +283,28 @@ func parseLine(data []byte) (int, stationName, measurement) {
 		newlineIdx++
 	}
 	if newlineIdx >= len(data) {
-		return -1, "", 0
+		return -1, "", 0, 0
 	}
 	if data[newlineIdx-2] != '.' {
 		newlineIdx++
 	}
 	if newlineIdx >= len(data) || data[newlineIdx] != '\n' {
-		return -1, "", 0
+		return -1, "", 0, 0
 	}
 
 	name := stationName(unsafe.String(&data[0], len(data[:separatorIdx])))
-	return newlineIdx, name, parseNumber(data[separatorIdx+1 : newlineIdx])
+	// Preserve the exact first name word; delimiter, temperature and following
+	// row bytes must not participate in its fingerprint.
+	if separatorIdx < 8 {
+		if len(data) < 8 {
+			firstWord = stationWord(name)
+		} else {
+			// "Oslo;1.2" loads 0x322e313b6f6c734f; a four-byte mask
+			// keeps only 0x6f6c734f for the name fingerprint.
+			firstWord &= (uint64(1) << (separatorIdx * 8)) - 1
+		}
+	}
+	return newlineIdx, name, parseNumber(data[separatorIdx+1 : newlineIdx]), firstWord
 }
 
 // parseNumber parses the bytes into a int16 multiplied by 10.
@@ -435,29 +467,51 @@ func mean(sum sumT, count countT) float64 {
 	return float64(quotient) / 10
 }
 
-// simpleMap uses 32K inline entries and a complete short-name fingerprint.
+// flatSlots keeps the table below one-third occupancy at the 10,000-station
+// limit. flatMask reduces a hash to its home slot: Oslo's hash ends in 0xa782,
+// so its home slot is 0xa782 & 0x7fff = 10114.
 const flatSlots = 32768
 const flatMask = flatSlots - 1
 
+// simpleMap is a worker-local, open-addressed station table with owned keys.
+// Repeated rows such as "Oslo;12.6\n" update one inline entry; other stations
+// occupy separate entries, probing forward if their home slots collide.
 type simpleMap struct {
 	data     []flatEntry
 	capacity int
 	length   int
 }
+
+// flatEntry stores one owned station name, its running statistics and hash.
+// After "Oslo;12.6\n", it holds name="Oslo", stats={sum:126, min:126,
+// max:126, count:1}, hash=0xa618e03c65f6a782. An empty name marks a free slot;
+// valid input names are nonempty. Each entry occupies 40 bytes on 64-bit Go.
 type flatEntry struct {
 	name  stationName
 	stats stats
 	hash  uint64
 }
+
+// bucketItem is an iterator view of an occupied entry, not a copied stats value.
+// For Oslo, name is "Oslo" and stats points directly to that table's accumulator.
 type bucketItem struct {
 	stats *stats
 	name  stationName
 }
 
+// newSimpleMap allocates an empty fixed-size table. The argument is retained
+// for existing callers: newSimpleMap(10000) has 32768 slots and zero entries.
 func newSimpleMap(_ int) simpleMap {
 	return simpleMap{capacity: flatSlots, data: make([]flatEntry, flatSlots)}
 }
+
+// len counts distinct stations, not rows: two Oslo rows and one Paris row give 2.
 func (m *simpleMap) len() int { return m.length }
+
+// Iter visits occupied slots in table order and allows stopping via yield=false.
+// Oslo at its home slot yields (10114, bucketItem{name:"Oslo", stats:...}).
+// Collisions can move entries, so merging into another table must recompute
+// that table's lookup position rather than reuse the yielded slot.
 func (m *simpleMap) Iter() iter.Seq2[uint32, bucketItem] {
 	return func(yield func(uint32, bucketItem) bool) {
 		for i := range m.data {
@@ -468,6 +522,11 @@ func (m *simpleMap) Iter() iter.Seq2[uint32, bucketItem] {
 		}
 	}
 }
+
+// stationWord packs the first eight name bytes into a little-endian word,
+// zero-padding short names without reading past their end. For example,
+// "Oslo" becomes 0x000000006f6c734f; "abcdefghX" becomes 0x6867666564636261.
+// Length remains part of identity: "A" and "A\x00" both pack to 0x41.
 func stationWord(name stationName) uint64 {
 	if len(name) >= 8 {
 		return binary.LittleEndian.Uint64([]byte(name))
@@ -489,6 +548,11 @@ func stationWord(name stationName) uint64 {
 	}
 	return word
 }
+
+// stationFingerprint hashes every name byte; "Oslo" gives 0xa618e03c65f6a782.
+// Up to eight bytes, odd multiplication and rotation are reversible, so hash
+// plus length identifies the whole name. Longer names also require exact string
+// equality: a 64-bit hash alone cannot identify every possible long name.
 func stationFingerprint(name stationName) uint64 {
 	if len(name) <= 8 {
 		return bits.RotateLeft64(stationWord(name)*0x517cc1b727220a95, 17)
@@ -496,19 +560,35 @@ func stationFingerprint(name stationName) uint64 {
 	return stationFingerprintLong(name)
 }
 
+// stationFingerprintLong mixes successive eight-byte words and a padded tail.
+// "abcdefghX" and "abcdefghY" share their first word but include different
+// tails (0x58 and 0x59), producing different complete fingerprints.
 func stationFingerprintLong(name stationName) uint64 {
-	word := stationWord(name)
+	return stationFingerprintLongFromWord(name, stationWord(name))
+}
+
+// stationFingerprintLongFromWord continues the full-name hash from a cached
+// first word equal to stationWord(name), avoiding a second load of those bytes.
+// For ("abcdefghX", 0x6867666564636261), it mixes the remaining byte 0x58 and
+// returns 0x882cfcbff17ddf39, identical to stationFingerprint("abcdefghX").
+func stationFingerprintLongFromWord(name stationName, word uint64) uint64 {
 	for offset := 8; offset < len(name); offset += 8 {
 		word = bits.RotateLeft64(word*0x517cc1b727220a95^stationWord(name[offset:]), 17)
 	}
 	return bits.RotateLeft64(word*0x517cc1b727220a95, 17)
 }
 
+// pos returns the initial probe slot, not necessarily the occupied slot after
+// collisions. For example, pos("Oslo") is 10114 in every new table.
 func (m *simpleMap) pos(name stationName) uint32 {
 	return uint32(stationFingerprint(name)) & flatMask
 }
 
-// homeHit keeps the common probe independent of insertion and probe-loop work.
+// homeHit checks only the initial slot using an already computed fingerprint.
+// It returns Oslo's accumulator when slot 10114 matches; an empty or colliding
+// slot returns nil for findSlow to handle. Short names match by hash and length;
+// long names additionally match the full string. Keeping this helper small
+// lets the compiler inline the common lookup without insertion/probe-loop work.
 func (m *simpleMap) homeHit(name stationName, hash uint64) *stats {
 	entry := &m.data[uint32(hash)&flatMask]
 	if entry.hash == hash && len(entry.name) == len(name) && (len(name) <= 8 || entry.name == name) {
@@ -517,6 +597,8 @@ func (m *simpleMap) homeHit(name stationName, hash uint64) *stats {
 	return nil
 }
 
+// find returns the existing accumulator or inserts an owned name with zero stats.
+// Repeated find("Oslo") calls return the same pointer, ready for updateStats.
 func (m *simpleMap) find(name stationName) *stats {
 	hash := stationFingerprint(name)
 	if hit := m.homeHit(name, hash); hit != nil {
@@ -525,7 +607,10 @@ func (m *simpleMap) find(name stationName) *stats {
 	return m.findSlow(name, hash)
 }
 
-// findSlow starts at the home slot, which may be empty, and never rehashes.
+// findSlow handles insertion and collision probes without rehashing the name.
+// For a home slot of 32767, occupied mismatches continue at 0, then 1, etc.
+// A new "Oslo" key is cloned before storing it, so later changes to the input
+// buffer cannot change the key. The input limit leaves empty slots available.
 func (m *simpleMap) findSlow(name stationName, hash uint64) *stats {
 	pos := uint32(hash) & flatMask
 	for {
@@ -542,6 +627,10 @@ func (m *simpleMap) findSlow(name stationName, hash uint64) *stats {
 		pos = (pos + 1) & flatMask
 	}
 }
+
+// get probes from pos (normally m.pos(name)) without inserting missing names.
+// An existing Oslo returns its stats pointer and true; a missing Oslo reaches
+// an empty slot and returns nil, false.
 func (m *simpleMap) get(pos uint32, name stationName) (*stats, bool) {
 	hash := stationFingerprint(name)
 	for {
@@ -555,46 +644,11 @@ func (m *simpleMap) get(pos uint32, name stationName) (*stats, bool) {
 		pos = (pos + 1) & flatMask
 	}
 }
+
+// set copies statistics into the station's owned entry, inserting if needed.
+// For example, set(m.pos("Oslo"), "Oslo", &stats{sum:126, count:1}) stores
+// those values independently of the supplied pointer. The old position
+// argument is ignored because collision resolution belongs to find.
 func (m *simpleMap) set(_ uint32, name stationName, st *stats) {
 	*m.find(name) = *st
-}
-
-// stationPos calculates position in slice of our simple hashmap
-// given the stationName and capacity of the map.
-//
-// Original hashing function did 1 byte at a time (*101+byte)
-// and this one just batches it into single uint32 2 bytes at a time.
-// Thanks ChatGPT! And suprisingly it is much faster than the previous one
-// and than fnv1a, because we have to % by capacity even with fnv1a.
-//
-// // BenchmarkStationIdx-8   	21225350	        50.76 ns/op	       0 B/op	       0 allocs/op
-// // Benchmark101Hash-8   	20576145	        57.85 ns/op	       0 B/op	       0 allocs/op
-// // BenchmarkFnv-8   	17671476	        60.78 ns/op	       0 B/op	       0 allocs/op
-func stationPos(station stationName, capacity int) uint32 {
-	var (
-		hash uint32 = 2166136261
-		// Prime number used also in fnv1a.
-		prime32b uint32 = 16777619
-		//prime64b uint64 = 1099511628211
-	)
-	n := len(station)
-
-	// Process 2 bytes at a time.
-	// We can also process 8 and 4 bytes at a time, however there are short
-	// names (3 letters), and spec says names can be [1, 100] bytes.
-	// Doing 8 bytes is faster, but produces over hundred collisions on
-	// shorter names. This way it produces only 5 total collisions with
-	// max 2 per bucket. That is acceptable and provides overall speedup
-	// of 24% over the byte-by-byte hashing.
-	for i := 0; i+2 <= n; i += 2 {
-		// Load 2 bytes into a 64-bit integer.
-		block := uint32(station[i]) | uint32(station[i+1])<<8
-
-		// Hash calculation.
-		hash = hash*prime32b + block
-	}
-
-	// I tried to use fnv1a hash with this variant
-	// and fast modulo using bitwise operation (hash & capacity-1).
-	return hash % uint32(capacity)
 }

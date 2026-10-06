@@ -25,6 +25,16 @@ Linux research uses a Ryzen 7 5800X desktop. Compare ratios within a session.
   See [the acceptance record](EXPERIMENTS.md#accepted-robust-table-and-hotcold-split-2026-10-06).
   The retained pre-change Go baseline is commit `84e642c` (`perf(parser): scan
   separators eight bytes at a time`).
+- Parser-word reuse is now applied on top of committed baseline `f8a90a5`.
+  Standard confirmation is 2.444→2.312 s (5.42% less time); extended is
+  3.268→3.173 s (2.90%) and independently repeats at 3.269→3.141 s (3.93%).
+  All fresh null, order-drift and real-host quietness checks pass. The hash,
+  40-byte entries, decoder, reader and sixteen workers are unchanged.
+  `stationPos` had only an obsolete benchmark caller and is removed; its
+  benchmark now exercises the production fingerprint. New inline explanations
+  and concrete data examples are scoped to `main.go` as requested.
+  See [the parser-word acceptance record](EXPERIMENTS.md#accepted-parser-word-reuse-2026-10-06)
+  and local `results/research/20261006/parser-word/`.
 - Read [README.md](README.md) for harness commands and [EXPERIMENTS.md](EXPERIMENTS.md)
   for the measurement rules, profile interpretation, experiment decisions, and
   prioritized backlog.
@@ -79,7 +89,8 @@ Linux research uses a Ryzen 7 5800X desktop. Compare ratios within a session.
   window3 now satisfy the declared 2% controls and confirmation-order limits,
   and the candidate is promoted. Earlier provisional/failed/interrupted windows
   remain retained; the provisional 7.5% result is not acceptance evidence.
-  Next isolate exact two-word identity/parser-word reuse on this accepted table.
+  Parser-word reuse is now accepted; next isolate exact two-word identity on
+  this table, including reuse of the second loaded name word.
 - Read [third_party/README.md](third_party/README.md) before changing pinned
   third-party sources or adapters.
 - Local `results/go.mod` excludes mutually exclusive archived Go prototypes
@@ -213,7 +224,8 @@ rerunning until it passes.
 1. Confirm the corpora and ignored `results/` directory are still present.
 2. Follow the current Linux ordered experiment plan in [EXPERIMENTS.md](EXPERIMENTS.md).
    The robust table's hot/cold split is accepted; next
-   test exact two-word lookup, combine the already validated bounded decoder,
+   test exact two-word lookup on the accepted parser-word implementation,
+   combine the already validated bounded decoder,
    and isolate scalar delimiter batching, Go SIMD and staged cursors.
    Existing prototype patches and builds
    are retained under `results/research/20261005/`; do not reconstruct from
