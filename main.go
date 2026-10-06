@@ -237,7 +237,8 @@ func chunkReader(chunks chan chunk) simpleMap {
 
 // parseLine decodes the first newline-terminated row and returns its newline
 // index, a borrowed station name, temperature in tenths and normalized first
-// name word. For "Oslo;-12.6\nParis;0.0\n", it returns
+// name word. A bounded word decoder handles interior temperatures; short final
+// rows retain the scalar fallback. For "Oslo;-12.6\nParis;0.0\n", it returns
 // (10, "Oslo", -126, 0x6f6c734f); delimiter/temperature bytes are masked out.
 // An incomplete row such as "Oslo;1.2" returns (-1, "", 0, 0). The name aliases
 // data; the table clones it on insertion before the input buffer can be reused.
@@ -278,6 +279,40 @@ func parseLine(data []byte) (int, stationName, measurement, uint64) {
 		return -1, "", 0, 0
 	}
 
+	name := stationName(unsafe.String(&data[0], len(data[:separatorIdx])))
+	// Preserve the exact first name word; delimiter, temperature and following
+	// row bytes must not participate in its fingerprint.
+	if separatorIdx < 8 {
+		if len(data) < 8 {
+			firstWord = stationWord(name)
+		} else {
+			// "Oslo;1.2" loads 0x322e313b6f6c734f; a four-byte mask
+			// keeps only 0x6f6c734f for the name fingerprint.
+			firstWord &= (uint64(1) << (separatorIdx * 8)) - 1
+		}
+	}
+
+	// Decode all four legal temperature layouts with one bounded 64-bit load.
+	// For "-12.6\n", the dot is byte 3 (bit 28 in the mask), signed=-1,
+	// aligned digit nibbles multiply into absolute=126, then sign gives -126.
+	// Extra bytes after the newline never enter the digit mask. Complete final
+	// rows have fewer than eight remaining bytes and use parseNumber below.
+	if len(data)-separatorIdx >= 9 {
+		temperatureWord := binary.LittleEndian.Uint64(data[separatorIdx+1:])
+		dotPos := bits.TrailingZeros64(^temperatureWord & 0x10101000)
+		if dotPos <= 28 {
+			newlineIdx := separatorIdx + dotPos/8 + 3
+			if data[newlineIdx] != '\n' {
+				return -1, "", 0, 0
+			}
+			signed := int64(^temperatureWord<<59) >> 63
+			digits := ((temperatureWord & ^(uint64(signed) & 0xff)) << (28 - dotPos)) & 0x0f000f0f00
+			absolute := int64((digits * 0x640a0001) >> 32 & 0x3ff)
+			value := measurement((absolute ^ signed) - signed)
+			return newlineIdx, name, value, firstWord
+		}
+	}
+
 	newlineIdx := separatorIdx + 4
 	if data[separatorIdx+1] == '-' {
 		newlineIdx++
@@ -292,18 +327,6 @@ func parseLine(data []byte) (int, stationName, measurement, uint64) {
 		return -1, "", 0, 0
 	}
 
-	name := stationName(unsafe.String(&data[0], len(data[:separatorIdx])))
-	// Preserve the exact first name word; delimiter, temperature and following
-	// row bytes must not participate in its fingerprint.
-	if separatorIdx < 8 {
-		if len(data) < 8 {
-			firstWord = stationWord(name)
-		} else {
-			// "Oslo;1.2" loads 0x322e313b6f6c734f; a four-byte mask
-			// keeps only 0x6f6c734f for the name fingerprint.
-			firstWord &= (uint64(1) << (separatorIdx * 8)) - 1
-		}
-	}
 	return newlineIdx, name, parseNumber(data[separatorIdx+1 : newlineIdx]), firstWord
 }
 

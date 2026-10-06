@@ -842,3 +842,152 @@ Evidence: local ignored `results/research/20261006/parser-word/`, including
 Next isolate exact two-word identity, reusing the second scanner word while
 preserving full-name fallback. Prefix routing/trie, bounded numeric decoding,
 scalar mask batching, Go SIMD and reader/allocation work remain separate steps.
+
+
+## Second-word reuse and exact matching rejected (2026-10-06)
+
+Implemented and compared four immutable variants on committed `51e20a1`:
+baseline (40-byte entries); second-word reuse with unchanged fingerprint and
+full long equality (40 bytes); the same reuse with an unused field as a footprint
+control (48 bytes); and reuse with a cached second name word and exact matching
+through fifteen bytes (48 bytes). The second SWAR block is peeled and its load
+reused; bounded short-row fallbacks and name-length masking exclude row suffixes.
+All variants retain hash mapping/probes, 32K capacity, owned keys, numeric decoder,
+reader/channels, sixteen workers and output. Production remains `51e20a1`.
+
+Exact matching uses the existing full fingerprint, normalized second word and
+length. For 9..15-byte names the hash steps are invertible for a fixed second
+word, so the tuple identifies the complete name. Names sixteen bytes and longer
+retain full string equality. Differential tests include every length through
+100, UTF-8, unaligned starts, truncated rows, suffix independence, zero-padded
+tail/length distinctions and ownership after input mutation. Deliberate legal
+printable-name hash collisions verify rejection for fifteen-byte keys and the
+full-string fallback for twenty-three-byte keys. All home-hit helpers inline.
+
+| Comparison | Standard 1B | 10K-station 1B | Decision |
+| --- | ---: | ---: | --- |
+| Reuse vs committed baseline, ABBA | -0.893% runtime | +1.058% runtime | No qualifying gain; extended nonregression fails |
+| Exact vs committed baseline | -2.869%, ABBA | +2.719%, balanced screen | Reject; no extended precision confirmation |
+| Exact vs reuse | -0.973%, ABBA | +2.988%, balanced screen | Reject extended pair |
+| Layout control vs reuse, balanced screen | -1.028% | +1.221% | Footprint/code-generation attribution only |
+| Exact vs layout control, balanced screen | -0.740% | +1.746% | Exact-check gain is not the whole standard benefit |
+
+Negative means less runtime. Both windows pass fresh null controls: maximum
+drift 0.271% standard and 0.590% extended, against the declared 2% limit. Both
+real-host preflights and continuous monitors pass with no measured violations.
+Inputs remain fully resident, releases unchanged and every measured output exact.
+Eight cyclic/reversed screen rounds put every variant in each position twice.
+Qualifying pairs use ABBA with two excluded warmups and five measurements per
+block; confirmation order drift stays below 0.62%. Extended exact pairs exceed
+the predeclared 1% screen nonregression bound and are not precision-rerun.
+Reuse's standard confirmation is below the 1% minimum gain and extended is
+slower; exact's standard gain cannot compensate for its extended regression.
+Small-effect replication is for qualifying adoption, not retrying rejected
+candidates until they win. Neither prototype is promoted.
+
+Independent diagnostic counts also establish actual row coverage: at most
+8/15/16 bytes covers 65.857%/97.578%/99.031% of standard rows and
+78.150%/83.700%/84.270% of extended rows. The extra exact shortcut applies to
+31.72 percentage points of standard rows but only 5.55 points of extended.
+This aligns with the different effects across corpora; it does not attribute
+all runtime differences to equality or table stride.
+
+Separate grouped user counters, both 100% scheduled, show baseline/reuse/layout/
+exact at 254.308/253.603/256.753/247.073 instructions per row standard and
+284.596/290.707/293.079/291.640 extended. Corresponding IPC is
+1.974/2.022/2.078/2.041 and 1.635/1.683/1.700/1.643. Returning another word
+adds masking, register and branch work on rows that do not benefit from the
+shortcut. Parser stack grows 56→64 bytes; exact caller grows 216→224 bytes.
+Home-hit inline cost is 40 for baseline/reuse/layout and 55 for exact.
+
+Allocation volume is 13.822 GB standard and 17.098 GB extended for baseline/
+reuse, versus 13.826/17.103 GB for layout/exact; almost all is chunk buffers.
+The entry field adds about 4.2 MB across sixteen tables. Post-GC heap remains
+about 0.63 MB; sampled RSS ranges 280–353 MB. Instrumented GC capacity spans
+2.79–3.47%, idle capacity 9.84–15.31%. All-worker wait while the producer is
+in a syscall stays below 1.22 ms. Overlapping channel waits, runtime mutexes
+and instrumentation sleeps do not indicate a shared table lock or application
+sleep; there is no measured reason to change reader/channel topology here.
+
+All four pass tests, vet, race and Linux ARM64 cross-build, all 28 small/adversarial
+oracles each, both paired-checksum full 1B oracles each and independent exact 1B
+counts on both inputs. Evidence is retained under local ignored
+`results/research/20261006/second-word/`: snapshots, release/build hashes,
+compiler/assembly, row-length counts, CPU/allocation/heap/GC/block/mutex/goroutine/
+scheduling profiles, complete timing/host records and `decision.json`.
+
+Next test the previously validated bounded temperature decoder on retained
+`51e20a1`, keeping table/hash/I/O fixed. Exact word lookup remains a later revisit:
+isolate an inlinable 9..15-byte fingerprint path and assess a cold tail array
+separately from entry stride/extra-return overhead. Neither alternative is
+implemented or measured. Prefix routing/trie, scalar delimiter batching and Go
+SIMD remain on the ordered backlog.
+
+
+## Accepted bounded temperature decoder (2026-10-06)
+
+Applied to retained first-word baseline `51e20a1` after isolated validation and
+paired-corpus timing. Port the previously validated temperature-word arithmetic
+onto the accepted parser/table. One eight-byte load finds the decimal position,
+aligns digit nibbles, forms integer tenths with a multiply and restores the sign.
+For `-12.6`, the decimal mask selects bit 28, sign is -1 and magnitude is 126.
+The load occurs only with eight in-slice bytes after the semicolon; short final
+rows retain `parseNumber`. The exact newline remains checked, and bytes from
+the following row never enter the digit mask. The existing name/first-word
+normalization block moves before numeric decoding so both returns share it.
+
+Table capacity/layout/hash/probing, owned keys, first-word reuse, reader/channel
+topology, sixteen workers, integer aggregation/rounding and output are fixed.
+There is no second-word station cache, SIMD, target-flag change or buffer change.
+New inline explanations and data examples are scoped to `main.go`.
+
+| Corpus/window | Baseline mean | Decoder mean | Runtime reduction | Fresh null max drift |
+| --- | ---: | ---: | ---: | ---: |
+| Standard 1B / 1 | 2.291744 s | 2.210153 s | 3.560% | 0.548% |
+| 10K-station 1B / 1 | 3.130962 s | 3.071864 s | 1.888% | 1.172% |
+| 10K-station 1B / 2, independent repeat | 3.142725 s | 3.022448 s | 3.827% | 0.464% |
+
+Each window uses live-host preflight/continuous monitoring, unchanged CPU/IO/
+paging limits, sixty-second preconditioning, baseline A/B/B/A null blocks,
+six balanced alternating screen rounds and baseline/decoder/decoder/baseline
+confirmation. Null and confirmation blocks have two excluded warmups and five
+measurements each; means pool ten measurements per variant. All null/order
+checks pass the predeclared 2% bound and all adjacent pairs favor the decoder.
+Standard baseline/decoder order drift is +0.545%/-0.973%; extended window 1 is
+-0.219%/-0.437%, repeat -0.042%/-0.698%. No measured host violations occur,
+artifacts are unchanged, active inputs fully resident and all outputs exact.
+The first extended gain is below the 3% replication threshold and is therefore
+independently repeated; both complete windows are retained rather than selecting
+the larger effect. These are within-window comparisons, not cross-session gains.
+
+Both variants pass unit tests, vet, race and Linux ARM64 cross-build. New
+exhaustive tests independently verify all 1,999 values -999..999 tenths plus
+the `-0.0` spelling, Unicode and 1..100-byte names, unaligned starts, zero..eight
+following bytes, every truncated row prefix and following-row independence.
+All 28 small/adversarial outputs and both paired-checksum full 1B oracles pass;
+separate artifacts independently consume exactly 1B rows on both corpora.
+The promoted repository source matches the measured candidate's executable
+Go AST. Its normal adapter is rebuilt and passes the same small/full oracles.
+
+Separate grouped user counters, both 100% scheduled, show instructions/row
+254.357→236.523 standard and 285.162→266.826 extended (7.01%/6.43% reductions),
+with IPC 1.960→2.033 and 1.675→1.734. Lookup remains inlined and the parser
+stack stays at 56 bytes; the caller is unchanged. Numeric position and value
+now derive from one word rather than repeated sign/width branches and byte loads.
+
+Allocation volume remains 13.822/17.098 GB, dominated by chunk buffers, with
+about 0.63 MB live heap after GC. Sampled candidate RSS is 324/267 MB. Instrumented
+decoder GC/idle capacity is 3.33%/15.28% standard and 3.26%/18.04% extended.
+Time with every worker waiting while the producer is in a syscall is only
+0.26/0.60 ms. Cumulative channel waits overlap; profiling/testing sleeps and
+runtime locks do not establish application sleeps or a shared station-table lock.
+No reader/channel or allocation strategy is changed in this experiment.
+
+Evidence: local ignored `results/research/20261006/temperature-word/` contains
+source/release hashes, compiler/assembly, exhaustive tests, full validation/counts,
+CPU/allocation/heap/GC/goroutine/block/mutex/scheduling profiles, all three raw
+timing/host windows, `acceptance.json` and promoted build/oracle checks.
+Next isolate scalar delimiter-mask batching across rows, preserving the surviving
+decoder/table/reader and full-name hashing. Then compare a Go SIMD mask generator
+against a flag-matched scalar control. Staged cursors, buffer reuse, I/O variants
+and prefix/trie work remain separate experiments.

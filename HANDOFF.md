@@ -35,6 +35,30 @@ Linux research uses a Ryzen 7 5800X desktop. Compare ratios within a session.
   and concrete data examples are scoped to `main.go` as requested.
   See [the parser-word acceptance record](EXPERIMENTS.md#accepted-parser-word-reuse-2026-10-06)
   and local `results/research/20261006/parser-word/`.
+- Second-word reuse and exact 9..15-byte matching are now tested and rejected
+  on this Linux host. Reuse confirms -0.89% standard time but +1.06% extended;
+  exact matching confirms -2.87% standard, but its extended screen regresses
+  +2.72% and stops before confirmation. Both windows pass host/null/order checks.
+  `51e20a1` was retained as the baseline for the decoder experiment; sources/
+  tests, the 48-byte footprint
+  control, full oracles/counts and all allocation/wait profiles are retained in
+  `results/research/20261006/second-word/`. See
+  [the rejection record](EXPERIMENTS.md#second-word-reuse-and-exact-matching-rejected-2026-10-06).
+  The bounded temperature decoder is now accepted below. Further exact-word work
+  should isolate a small inlined 9..15-byte hash path and a cold tail array;
+  neither alternative is yet implemented or measured.
+- Production now adds the accepted bounded temperature-word decoder to
+  first-word reuse: standard 2.292→2.210 s (3.56% less runtime), extended
+  3.131→3.072 s (1.89%) independently repeated at 3.143→3.022 s (3.83%).
+  Both extended windows are reported; all three fresh null/order/host controls
+  pass. Eight-byte loads are bounded and short final rows keep the scalar
+  fallback. The 40-byte table/hash, reader/channels, sixteen workers and output
+  remain fixed. Exhaustive temperatures, tails, ARM64 build, all small/full
+  oracles and independent row counts pass. See
+  [the decoder acceptance](EXPERIMENTS.md#accepted-bounded-temperature-decoder-2026-10-06)
+  and local `results/research/20261006/temperature-word/`.
+  Next isolate exact scalar delimiter-mask batching across rows, then a matched
+  Go SIMD mask generator; preserve this table/decoder/reader and bounded tails.
 - Read [README.md](README.md) for harness commands and [EXPERIMENTS.md](EXPERIMENTS.md)
   for the measurement rules, profile interpretation, experiment decisions, and
   prioritized backlog.
@@ -58,8 +82,10 @@ Linux research uses a Ryzen 7 5800X desktop. Compare ratios within a session.
   corpora. Fresh allocation, heap, goroutine, channel, mutex, syscall, and
   scheduling evidence is retained under `results/research/20261005/`.
 - The [native Java source/build review](EXPERIMENTS.md#native-java-review-and-implications-2026-10-05)
-  refines that plan: test exact two-word name equality (97.58% of standard
-  station keys), then staged two/three scan cursors before rewriting I/O.
+  refines that plan: exact two-word name equality covers 97.58% of standard
+  station keys, then staged two/three scan cursors precede rewriting I/O.
+  The first cached-word prototype is correct but fails paired Linux timing
+  as recorded above; Java's exact shortcut remains a source idea, not a Go win.
   Java uses a sparse pointer table; the Go prototype already has competitive
   probe counts. Native compilation includes ML-inferred profiles, Epsilon GC,
   host CPU targeting, and fewer loop safepoints. Their individual speed
@@ -89,8 +115,8 @@ Linux research uses a Ryzen 7 5800X desktop. Compare ratios within a session.
   window3 now satisfy the declared 2% controls and confirmation-order limits,
   and the candidate is promoted. Earlier provisional/failed/interrupted windows
   remain retained; the provisional 7.5% result is not acceptance evidence.
-  Parser-word reuse is now accepted; next isolate exact two-word identity on
-  this table, including reuse of the second loaded name word.
+  First parser-word reuse is accepted. The subsequent second-word/48-byte
+  exact-identity experiment is rejected; retain the forty-byte production table.
 - Read [third_party/README.md](third_party/README.md) before changing pinned
   third-party sources or adapters.
 - Local `results/go.mod` excludes mutually exclusive archived Go prototypes
@@ -223,10 +249,9 @@ rerunning until it passes.
 
 1. Confirm the corpora and ignored `results/` directory are still present.
 2. Follow the current Linux ordered experiment plan in [EXPERIMENTS.md](EXPERIMENTS.md).
-   The robust table's hot/cold split is accepted; next
-   test exact two-word lookup on the accepted parser-word implementation,
-   combine the already validated bounded decoder,
-   and isolate scalar delimiter batching, Go SIMD and staged cursors.
+   Retain the accepted robust table, first-word reuse and bounded decoder.
+   The first exact two-word prototype failed paired timing. Next isolate scalar
+   delimiter batching, Go SIMD and staged cursors.
    Existing prototype patches and builds
    are retained under `results/research/20261005/`; do not reconstruct from
    stale Mac branch names if these artifacts are available.
