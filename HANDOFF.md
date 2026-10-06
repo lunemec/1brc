@@ -57,8 +57,56 @@ Linux research uses a Ryzen 7 5800X desktop. Compare ratios within a session.
   oracles and independent row counts pass. See
   [the decoder acceptance](EXPERIMENTS.md#accepted-bounded-temperature-decoder-2026-10-06)
   and local `results/research/20261006/temperature-word/`.
-  Next isolate exact scalar delimiter-mask batching across rows, then a matched
-  Go SIMD mask generator; preserve this table/decoder/reader and bounded tails.
+  This version is committed as `ef7418a`.
+- Exact scalar 64-byte mask batching is now tested and rejected. Six-permutation
+  screens are +4.97% standard and +3.15% extended versus `ef7418a`; both pass
+  fresh null/host checks. Extended screen baseline half drift is -2.25%, so
+  neither screen is presented as a precision confirmation. Mask reuse beats
+  the per-row restart control but not production. All tests, ARM64 build,
+  small/full oracles and independent billion-row counts pass. Allocations stay
+  unchanged; scalar mask/consumer work increases instructions and caller stack.
+  Sources, patches and full allocation/wait evidence are retained in
+  `results/research/20261006/delimiter-batch/`. See
+  [the rejection record](EXPERIMENTS.md#scalar-delimiter-batching-rejected-2026-10-06).
+  Preserve this table/decoder/reader and bounded tails. `parseNumber` still
+  serves the short final row of each chunk; remove it only with an equivalent
+  bounded tail decoder, as a separate cleanup.
+- Go SIMD mask generation is now validated but not promoted. With matching
+  flags, standard A/B/B/A confirmation is 2.196326→2.177410 s (-0.861%),
+  extended 3.022108→3.020680 s (-0.047%). Both completed windows pass fresh
+  null, order and host checks, but neither reaches >=1% standard or >=3%
+  extended; retain `ef7418a`. Four variants include a plain build-flag control,
+  matched production, scalar batching and AVX2. The native kernel inlines and
+  dispatches once per worker, with the original parser for unsupported builds/
+  CPUs. Unit/vet/race/ARM64, protected-page/bounds, disabled CPU/build, all
+  small/full oracles and independent billion-row counts pass. Sources/patches,
+  all allocation/wait evidence and timing/decision records live in
+  `results/research/20261006/simd-mask/`. A report-variable bug stopped the first
+  standard window; preserve it and the old harness. Completed standard window 2
+  uses the corrected harness and fresh controls. See
+  [the SIMD record](EXPERIMENTS.md#go-simd-mask-validated-not-promoted-2026-10-06).
+  Those producer/allocation traces motivated the accepted buffer experiment below.
+- Bounded buffer reuse is applied and committed on top of `ef7418a`.
+  Standard confirmation is 2.204872→1.926155 s (12.64% less runtime), extended
+  3.049592→2.398277 s (21.36%). Both fresh null/order/real-host controls pass.
+  A lazy producer-owned pool allocates at most seventeen 6 MiB buffers here;
+  workers return them after their final row update. Existing cloned keys,
+  parser/table/decoder, sequential ranges, work-channel buffering and sixteen
+  workers are fixed. New comments/examples remain scoped to `main.go`.
+  Allocation volume falls 13.822→0.132 GB standard and 17.098→0.137 GB extended
+  (over 99%); GC cycles 130/152→3, post-GC heap stays around 0.6 MB. Ownership,
+  EOF/stale bytes, multiworker/race, ARM64, all small/full oracles and independent
+  billion-row counts/pool bounds pass. The normal adapter is rebuilt/validated
+  and repository executable AST matches the measured candidate. See
+  [the pool acceptance](EXPERIMENTS.md#accepted-bounded-buffer-reuse-2026-10-06)
+  and local `results/research/20261006/buffer-pool/`.
+  CPU-class metrics are cached until GC on this runtime; with only three startup
+  collections, pre-GC idle ratios are stale. The retained analysis refreshes from
+  the existing post-forced-GC snapshot and preserves raw values/old analyzer;
+  endpoint includes cleanup/reporting. Refreshed pool GC capacity is below 0.1%.
+  Next isolate two/three cursors on this pooled baseline, preserving same-station
+  update order and exact row counts. SIMD revisit, parallel ReadAt and mmap are
+  separate experiments; keep the measured pool changes intact.
 - Read [README.md](README.md) for harness commands and [EXPERIMENTS.md](EXPERIMENTS.md)
   for the measurement rules, profile interpretation, experiment decisions, and
   prioritized backlog.
@@ -102,10 +150,11 @@ Linux research uses a Ryzen 7 5800X desktop. Compare ratios within a session.
   narrowly fails 2%, so those timings are exploratory. Copy ignored
   `results/research/20261005/external/` and the recorded build artifacts when
   transferring this research to another machine.
-- Go 1.27 SIMD is a dedicated later experiment in the ordered plan. After
-  establishing scalar multi-row mask reuse, compare an AVX2 mask generator
-  using `simd/archsimd` against a control built with the same experiment flags;
-  retain SWAR tails/fallback and measure portable/ARM64 support separately.
+- Go 1.27 SIMD's first AVX2 mask experiment now misses production gain criteria,
+  as recorded above. Keep its kernel and matched scalar/production controls for
+  later research; default flags and production source remain unchanged. A
+  separate GOAMD64=v3 performance screen, portable SIMD and ARM64 NEON are
+  still unmeasured; scalar fallbacks already cross-build on ARM64.
   The robust table's hot/cold split was implemented as an isolated experiment
   with hash, capacity, entry layout, parsing and I/O fixed. See
   [the implementation record](EXPERIMENTS.md#robust-table-hotcold-split-implementation-2026-10-05)
@@ -249,9 +298,11 @@ rerunning until it passes.
 
 1. Confirm the corpora and ignored `results/` directory are still present.
 2. Follow the current Linux ordered experiment plan in [EXPERIMENTS.md](EXPERIMENTS.md).
-   Retain the accepted robust table, first-word reuse and bounded decoder.
-   The first exact two-word prototype failed paired timing. Next isolate scalar
-   delimiter batching, Go SIMD and staged cursors.
+   Retain the accepted robust table, first-word reuse, bounded decoder and buffer pool.
+   Exact two-word lookup, scalar batching and the first Go SIMD mask experiment
+   fail their production timing criteria. Bounded buffer reuse is accepted and
+   committed. Next isolate staged cursors, then I/O variants;
+   revisit SIMD independently against a pooled control if useful.
    Existing prototype patches and builds
    are retained under `results/research/20261005/`; do not reconstruct from
    stale Mac branch names if these artifacts are available.
@@ -277,8 +328,10 @@ Suggested skills for the next agent: `cc-skills-golang:golang-how-to`,
 - `bash -n test_harness.sh`
 - `shellcheck bench.sh test_harness.sh`
 - `./test_harness.sh` (stable and deliberately drifting null-control cases)
-- `go test ./...` (17 tests)
+- `go test -pgo=off ./...`, `go vet -pgo=off ./...`, `go test -race -pgo=off ./...`
+- Linux ARM64 cross-build and normal-adapter 28 small / both full 1B output checks
 
 The original Mac full null rerun remains pending. Linux full-corpus references,
-null controls and prototype screens are complete as recorded above; no new Go
-candidate has yet passed the required acceptance protocol on both corpora.
+null controls and prototype comparisons are complete as recorded above. The
+accepted robust table, first-word reuse, bounded decoder and buffer reuse pass
+the Linux acceptance protocol; current production includes all four changes.

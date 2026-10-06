@@ -459,7 +459,10 @@ different execution contract and must be labelled accordingly.
    that still restarts for each
    row is a different experiment. Keep parser/table/I/O fixed and retain
    full-name hashing. The external whole-program win does not isolate SIMD's
-   contribution or predict the Go gain.
+   contribution or predict the Go gain. The exact scalar control is now tested
+   and rejected for production: mask reuse reduces the restart control's cost,
+   but remains slower than the accepted parser on both corpora. See
+   [the scalar batching record](#scalar-delimiter-batching-rejected-2026-10-06).
 4. **Explore Go's new SIMD support after the scalar batching control.** The
    installed Go 1.27.1 provides experimental `simd` and `simd/archsimd`, enabled
    with `GOEXPERIMENT=simd`; preserve this machine's existing experiment with
@@ -472,10 +475,33 @@ different execution contract and must be labelled accordingly.
    compare full-program timings, instructions/cycles, allocations and waits.
    Explore portable `simd` and ARM64 NEON separately: their current masks lack
    the same direct scalar `ToBits` reduction, so measure reduction cost and
-   retain SWAR fallback. SIMD key equality/hash work follows only if profiles
-   justify it. See [Go's architecture-specific SIMD design](https://go.dev/blog/archsimd)
+   retain SWAR fallback. Compare both the retained production parser and the
+   rejected scalar batch control with matching experiment/target flags; beating
+   scalar batching alone cannot justify promotion. Keep `GOAMD64=v1` for this
+   isolation and test a v3 target separately. SIMD key equality/hash work follows
+   only if profiles justify it. See [Go's architecture-specific SIMD design](https://go.dev/blog/archsimd)
    and the retained API audit in `external/lehuyduc/go-transfer-plan.md`.
-5. **Interleave two/three cursors within the current chunk topology.** Split
+   The bounded AVX2 generator is now validated but not promoted: confirmation
+   gains of 0.861% standard and 0.047% extended miss the minimum-gain rule.
+   See [the SIMD record](#go-simd-mask-validated-not-promoted-2026-10-06).
+5. **Recycle bounded chunk buffers after keys are owned.** Retain the accepted
+   production parser and current producer/channel topology first; return each
+   buffer only after its worker finishes. Bound the retained pool by worker
+   count and measure allocated bytes, peak/live heap, GC, wall time, producer
+   states and channel overhead. Borrowed unsafe strings must never point into
+   recycled storage; table insertion already owns keys. Add reuse/ownership,
+   short-read/EOF and repeated-station tests, then independent full oracles/counts.
+   This moves ahead of cursor staging after the SIMD traces: production and
+   SIMD producers spend 95–97% of trace time in Running or Syscall state and
+   wait only 1.3–1.8 ms on channel sends, while almost all 13.822/17.098 GB
+   allocation volume is chunk buffers. This suggests a producer supply limit;
+   it is not causal proof or a predicted pool speedup. Keep reader ranges,
+   buffer size, unbuffered work channel and sixteen workers fixed, and separate
+   a deterministic bounded pool from a later `sync.Pool` alternative. The
+   deterministic pool is now accepted: 12.64% less standard runtime, 21.36%
+   extended, and more than 99% less allocation volume. See
+   [the acceptance record](#accepted-bounded-buffer-reuse-2026-10-06).
+6. **Interleave two/three cursors within the current chunk topology.** Split
    chunks at newlines, stage word loads/masks, lookups, numeric decodes, and
    sequential updates across cursors, then drain remaining rows through the
    scalar loop. Test one, two, and three lanes with the same parser/table/I/O.
@@ -484,13 +510,8 @@ different execution contract and must be labelled accordingly.
    same-station cases, and instrument total consumed rows. Matching rounded
    aggregates alone can conceal dropped rows: the reviewed Ragnar scanner loses
    440 standard rows while still matching its billion-row output oracle.
-   This is moved ahead of I/O because the native source and
-   current worker traces support an instruction/dependency experiment first.
-6. **Recycle bounded chunk buffers after keys are owned.** Retain current
-   producer/channel topology first, return each buffer only after all lanes
-   finish, and measure allocated bytes, peak/live heap, GC, wall time, and
-   channel overhead. This isolates allocation savings from an I/O rewrite.
-   Borrowed unsafe strings must never point into recycled storage.
+   Native source still motivates this instruction/dependency experiment, but
+   test allocation reuse first given the later producer-state evidence.
 7. **Compare parallel reusable ReadAt ranges and mmap.** Keep the surviving
    hot loop unchanged, align ranges to newlines, and check every row is consumed
    exactly once. Include setup and cleanup in Go timing. Test atomic 2 MiB claims
@@ -498,13 +519,13 @@ different execution contract and must be labelled accordingly.
    mapping remains alive through merge/output; owned copies are mandatory for
    recycled buffers, not for every architecture. The old mmap comment is not a
    matched experiment against current code. Reprofile producer/wait/GC behavior
-   after the lookup/lane changes before attributing any I/O gain.
+   after the allocation/lane changes before attributing any I/O gain.
 8. **Reprofile and then choose compiler/architecture work.** Revisit worker
    count and PGO after dependency/cache behavior changes. Compare scalar,
    batched SWAR, and SIMD generated code and profiles before extending SIMD to
    hashing/equality. Go 1.27 experimental SIMD supports amd64 and ARM64, but
-   bounded tails and a scalar fallback remain necessary. No Go SIMD or
-   GOAMD64=v3 performance claim is made.
+   bounded tails and a scalar fallback remain necessary. The first Go SIMD
+   generator fails the production minimum-gain rule; GOAMD64=v3 is still unmeasured.
 
 ### Prefix directory and compressed radix trie (2026-10-06)
 
@@ -991,3 +1012,310 @@ Next isolate scalar delimiter-mask batching across rows, preserving the survivin
 decoder/table/reader and full-name hashing. Then compare a Go SIMD mask generator
 against a flag-matched scalar control. Staged cursors, buffer reuse, I/O variants
 and prefix/trie work remain separate experiments.
+
+
+## Scalar delimiter batching rejected (2026-10-06)
+
+Retain committed decoder baseline `ef7418a`. Three isolated scalar variants use
+the same 32K/40-byte table, full fingerprints/equality, owned keys, numeric
+arithmetic and bounded tail fallback, reader/channels, sixteen workers and
+output. **Restart** generates an exact 64-byte semicolon mask from each row's
+start; **batch** consumes every cached bit across consecutive aligned blocks.
+Both use a known-separator parser that preserves the decoder and first-word
+normalization, reloading the first station word for lookup. This reload and the
+consumer bookkeeping are part of the experiment. No SIMD or target change is
+included; builds retain `GOAMD64=v1`, `GOEXPERIMENT=nodwarf5`, `-pgo=off`.
+
+The scalar generator concatenates eight exact byte masks. First-match SWAR
+zero detection can borrow into a following byte and invent a delimiter for
+`;:`; it cannot be reused as an exact all-byte mask. The new addition-based
+detector prevents inter-byte carries, rejects nonzero/high-bit bytes and
+compresses eight flags. `A;0.0\nB;` produces `0x82`. Slices shorter than 64
+bytes retain the original bounded parser, including incomplete long-name tails.
+
+| Corpus | Baseline screen mean | Restart mean | Batch mean | Batch vs baseline | Fresh null max drift |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Standard 1B | 2.216663 s | 2.847713 s | 2.326921 s | +4.974% | 0.165% |
+| 10K-station 1B | 3.087404 s | 3.645457 s | 3.184543 s | +3.146% | 1.585% |
+
+Each window passes real-host preflight and the fresh 2% baseline A/B/B/A null
+gate after sixty-second preconditioning. Null blocks exclude two warmups and
+measure five runs each. Screens run all six permutations of the three variants:
+six measurements per variant, occupying each position twice. Active inputs are
+fully resident, release/harness hashes remain fixed and every output is exact.
+There are no measured host violations. One Chromium CPU burst is retained in
+the extended guard record during excluded preparation/warmup.
+
+Both screens exceed the predeclared +1% nonregression bound, so confirmation
+and replication are skipped. These are rejection screens, not precise ABBA
+effect estimates. Extended baseline first/second-half screen drift is -2.252%;
+retain that limitation rather than claiming a confirmed extended effect.
+The clean standard regression already rejects adoption. Relative to restart,
+mask reuse lowers screen runtime by 18.288% standard and 12.644% extended, but
+does not recover the accepted parser's performance. Those attribution results
+are exploratory too.
+
+All three pass unit tests, vet, race and Linux ARM64 cross-build. Exact-mask
+tests cover every adjacent-byte pair (65,536 combinations in each lane), all
+byte values at all 64 positions and randomized unaligned blocks. Parser tests
+cover all 1,999 temperatures, Unicode/NUL and 1..100-byte names, bounded loads
+and truncation. Consumer tests span all 64 alignments, names crossing multiple
+blocks, repeated same-station updates, chunk resets and incomplete final rows.
+All 28 small/adversarial outputs and both paired-checksum full 1B oracles pass
+for each variant. Separate diagnostic artifacts count exactly one billion
+consumed rows on each input for all three.
+
+| User instructions per row, separate diagnostic | Baseline | Restart | Batch |
+| --- | ---: | ---: | ---: |
+| Standard | 236.617 | 357.991 | 260.922 |
+| Extended | 266.847 | 383.100 | 288.384 |
+
+Grouped cycles/instructions counters are 100% scheduled. Batch adds
+10.27%/8.07% instructions and IPC falls 2.032→1.963 standard, 1.736→1.636
+extended. Its mask generator accounts for 9.63%/7.53% cumulative CPU samples;
+consumer bookkeeping also grows. The baseline caller stack is 216 bytes,
+restart 224 and batch 272; known-separator parser is 48 bytes versus the
+original parser's 56. The 501-byte mask generator remains out of line, while
+eight-byte flag extraction and the home-hit lookup inline. This evidence points
+to added scalar/consumer work, rather than a new allocation or shared-table lock.
+
+Allocation totals remain about 13.822/17.098 GB, almost entirely chunk buffers;
+post-GC live heap is 0.628–0.654 MB across variants. Sampled RSS spans 275–356 MB.
+Instrumented batch GC/idle capacity is 2.79%/9.88% standard and 3.00%/14.26%
+extended. Every worker waiting while the producer is in a syscall totals only
+0.43/0.65 ms. Cumulative channel waits overlap; runtime mutex and trace/testing
+sleep samples do not establish application sleeps or a shared station-table
+lock. Reader/channel topology remains a separate experiment.
+
+Evidence is retained under local ignored
+`results/research/20261006/delimiter-batch/`: frozen sources/tests, baseline and
+rejected patches, release/harness hashes, compiler/assembly, full oracles/counts,
+CPU/allocation/heap/GC/goroutine/block/mutex/scheduling profiles, both complete
+timing/host records and `decision.json`. Production source remains `ef7418a`.
+
+Next replace only this generator with Go SIMD under matched experiment/target
+flags. Measure against both the same scalar consumer and the retained production
+parser; preserve bounded tails and CPU-feature fallback. The scalar rejection
+does not predict a SIMD win. Staged cursors, buffer reuse and prefix/trie routing
+remain independent later candidates.
+
+`parseNumber` still has a production caller: the final complete row of a chunk
+has only 4–6 bytes after the semicolon, including newline, so cannot use the
+eight-byte decoder load. Keep it until an equivalent bounded tail decoder is
+implemented. Packing that cold tail into a zero-padded word could unify the
+arithmetic later, but would affect only roughly one row per 6 MiB chunk and
+must preserve newline/truncation checks; it is a cleanup candidate, not a
+demonstrated performance opportunity.
+
+
+## Go SIMD mask validated, not promoted (2026-10-06)
+
+The first Go SIMD experiment uses installed Go 1.27.1's `simd/archsimd` API.
+Four immutable variants isolate the build flag and generator: committed
+`ef7418a` with `GOEXPERIMENT=nodwarf5` (**plain**), the same production source
+with `nodwarf5,simd` (**baseline**), exact scalar batching with those flags
+(**batch**), and the same mask consumer with the AVX2 generator (**SIMD**).
+All use `GOAMD64=v1`, PGO off, the same 32K/40-byte table, hashes/equality,
+owned keys, numeric arithmetic/tail fallback, reader/channels and sixteen workers.
+
+The generator broadcasts `';'`, compares two bounded 32-byte vectors and joins
+two `Mask8x32.ToBits` results. `A;0.0\nB;1.0\n` followed by zero bytes gives
+`0x82`. The compiler inlines the kernel at cost 62, folds the loads into two
+`VPCMPEQB` memory operands and emits two `VPMOVMSKB` reductions. One inlined
+AVX2 check runs at worker entry; no callback or per-block feature dispatch is
+added. Builds without SIMD, non-amd64 builds and CPUs with AVX2 disabled use
+the accepted original parser. New semantic comments/examples are only in
+`main.go`; architecture files contain the small backend primitives and required
+build constraints. The original `parseNumber` still handles short chunk tails.
+
+| Corpus / completed window | Matched baseline confirmation mean | SIMD mean | Runtime reduction | Fresh null max drift |
+| --- | ---: | ---: | ---: | ---: |
+| Standard 1B / 2 | 2.196326 s | 2.177410 s | 0.861% | 0.350% |
+| 10K-station 1B / 1 | 3.022108 s | 3.020680 s | 0.047% | 0.494% |
+
+Each completed window passes unchanged real-host preflight/continuous quietness
+checks, sixty-second preconditioning and a fresh 2% baseline A/B/B/A null gate.
+The screen cycles four orders and their reverses, giving eight runs per variant
+and each position twice. Baseline/SIMD/SIMD/baseline confirmation excludes two
+warmups and measures five runs per block; the means pool ten runs per variant.
+Standard baseline/SIMD order drift is -0.223%/-0.316%, extended +0.891%/+0.671%.
+Both standard adjacent pairs favor SIMD by about 0.82%/0.91%; extended pairs
+are +0.062%/-0.156%, effectively neutral. All binaries/harness hashes remain
+fixed within each completed window, inputs fully resident and outputs exact.
+No measured host violations occur in either completed window.
+
+The matched-flag production screen differs from plain by -0.038% standard and
++0.002% extended. SIMD improves over the scalar batch screen by 5.523%/4.731%,
+but beating a rejected control is insufficient. Neither confirmation reaches
+the predeclared >=1% standard or >=3% extended gain. Retain `ef7418a`; no
+threshold relaxation, precision repetition to chase a qualifying gain, SIMD
+promotion or default build-flag change is justified by these results.
+
+The first standard window is retained as incomplete: a harness control-label
+variable shadowed its report path, causing report serialization to fail after
+the first baseline confirmation block. Its screen and partial outputs remain,
+with the original harness snapshot and failure note. Renaming the variable
+fixes the error without changing binaries, protocol or thresholds; completed
+standard window 2 starts with a fresh preflight/null. Failed window 1 is not
+acceptance evidence and is not described as a background-activity failure.
+
+All four variants pass unit tests, vet, race and Linux ARM64 cross-build.
+SIMD-disabled builds and AVX2-disabled runs pass unit/race checks; ARM64 also
+builds with the SIMD flag omitted. Native mask tests compare every byte value
+at every position, randomized unaligned blocks and all-set masks. Protected
+pages before/after the readable buffer test both ends and every alignment
+modulo 32; all 0..63-byte slices with spare capacity reject unsafe loads.
+Existing exhaustive temperatures, chunk/block boundaries, same-station updates,
+Unicode/NUL and incomplete tails still pass. Every variant matches all 28
+small/adversarial and both paired-checksum full 1B oracles; independent count
+artifacts consume exactly one billion rows on both inputs. Both disabled
+fallbacks also pass all small/full oracles; CPU-disabled count artifacts pass.
+
+| Separate user instructions per row | Plain | Matched baseline | Scalar batch | SIMD |
+| --- | ---: | ---: | ---: | ---: |
+| Standard | 236.394 | 236.339 | 261.018 | 231.919 |
+| Extended | 266.699 | 266.642 | 288.107 | 252.771 |
+
+Grouped cycles/instructions counters are 100% scheduled. SIMD lowers matched
+baseline instructions by 1.87%/5.20%, but IPC is 1.993→2.047 standard and
+1.707→1.615 extended. Instructions alone do not predict elapsed time. The
+inlined generator accounts for only 2.69%/1.13% cumulative CPU samples.
+Caller stack is 288 bytes versus 272 for scalar batching and 216 for production;
+known-separator decoding remains out of line at 48 bytes. Consumer bookkeeping,
+row-word reloads and lookup dependencies remain potential separate targets.
+
+Allocation volume remains 13.822/17.098 GB, overwhelmingly chunk buffers.
+SIMD post-GC heap is 0.626/0.631 MB; sampled RSS is 301/268 MB. Instrumented
+SIMD GC/idle capacity is 3.56%/16.51% standard and 3.65%/21.83% extended.
+CPU, heap/allocation, GC, goroutine, block/mutex and trace scheduling/syscall
+profiles are collected separately from timing. Cumulative worker channel waits
+overlap; runtime/trace sleeps and locks do not establish application sleeps
+or a shared station-table mutex.
+
+For the next experiment, production/SIMD producers occupy Running
+or Syscall state for 96.54%/97.13% of the standard trace and 95.18%/95.69%
+extended. Their channel-send waits are only 1.3–1.8 ms. All-worker waiting
+while the producer is in a syscall remains below 1 ms, but that small total
+does not rule out a single-producer supply limit: workers need not all starve
+together. These instrumented scheduler states are not direct CPU utilization
+or causal proof. They justify moving bounded buffer reuse before cursor staging,
+holding parsing/reader topology fixed and measuring allocations, producer
+occupancy, GC and guarded full wall time. Parallel reading/mmap remain separate
+later experiments.
+
+Evidence is in local ignored `results/research/20261006/simd-mask/`: frozen
+portable/SIMD sources/tests and patches, release/build/harness hashes,
+compiler/assembly, native/protected-page/fallback tests, full oracles/counts,
+all eight diagnostic sets, producer summaries, completed timing/host records,
+retained failed window/harness and `decision.json`. The SIMD kernel remains
+available as a research control; production source and build script are unchanged.
+
+
+## Accepted bounded buffer reuse (2026-10-06)
+
+Applied to committed decoder baseline `ef7418a`, after the scalar/SIMD mask
+experiments failed production gain criteria. A producer-owned pool allocates
+input buffers only when no completed loan is available, up to `chunkReaders+1`.
+Here that is seventeen 6 MiB buffers, a 102 MiB bound on input-buffer storage.
+The producer alone updates the allocation count; workers return slices over
+a buffered return channel after their last row update. The existing work
+channel stays unbuffered. Borrowed station names are already cloned on insertion,
+so a returned `Oslo;1.2\n` buffer can safely become `Rome;9.9\n` while the table
+retains its owned Oslo key and statistics. Returned slices restore full capacity.
+EOF views use only `ReadAt`'s returned byte count, excluding old buffer contents.
+The return channel remains open for workers finishing after producer EOF and
+becomes collectible with the completed run. Caller-owned test chunks have no
+return channel and are unaffected.
+
+The 32K/40-byte table, full fingerprint/equality/probing, owned keys, first-word
+reuse and numeric decoder including `parseNumber` tails are unchanged. Preserve
+sequential ReadAt/newline ranges, 6 MiB size, sixteen workers, work-channel
+buffering, integer aggregation/rounding and output. There is no `sync.Pool`,
+SIMD, mmap, parallel reader, cursor staging or target change. Builds use
+`GOAMD64=v1`, `GOEXPERIMENT=nodwarf5`, `-buildvcs=false`, `-pgo=off`.
+New inline explanations and data examples are scoped to `main.go`.
+
+| Corpus | Baseline confirmation mean | Pool mean | Runtime reduction | Fresh null max drift |
+| --- | ---: | ---: | ---: | ---: |
+| Standard 1B | 2.204872 s | 1.926155 s | 12.641% | 0.184% |
+| 10K-station 1B | 3.049592 s | 2.398277 s | 21.357% | 0.637% |
+
+Both windows pass unchanged real-host preflight/continuous quietness checks,
+sixty-second preconditioning and fresh 2% baseline A/B/B/A null gates. Six
+alternating screen rounds precede baseline/pool/pool/baseline confirmation.
+Each null/confirmation block excludes two warmups and measures five runs;
+confirmation means pool ten runs per variant. Standard baseline/pool order
+drift is -0.035%/+0.003%, extended -0.501%/+0.953%. Every adjacent confirmation
+pair favors reuse. Active inputs are fully resident, source/release/harness
+hashes remain fixed, all outputs exact and no measured host violations occur.
+Both gains exceed 3%, so protocol does not require independent repetition.
+These are within-window improvements, not differences between earlier sessions.
+
+Both variants pass unit tests, vet, race and Linux ARM64 cross-build. New tests
+cover bounded outstanding loans, reuse before further allocation, full-capacity
+returns, empty/incomplete chunks, exact and partial EOF, stale unread bytes,
+and repeated short/long/Unicode/NUL names through one, four and sixteen workers.
+After every recorded buffer is poisoned, independently accumulated statistics
+and stored names remain valid. The promoted test also inspects actual stored
+names: short-key hash/length lookups alone cannot prove their bytes are owned.
+All 28 small/adversarial and both paired-checksum full 1B oracles pass for both
+variants. Separate count builds consume exactly one billion rows on each input
+and record seventeen allocations with a seventeen-buffer limit. Repository
+executable Go AST matches the measured candidate; normal-adapter unit/vet/race/
+ARM64 and small/full output checks pass. The final direct-name ownership
+assertion is test-only, with a passing targeted unit/race check after promotion.
+
+| Instrumented memory metric | Standard baseline → pool | Extended baseline → pool |
+| --- | ---: | ---: |
+| Total allocation volume, decimal GB | 13.822078 → 0.131817 | 17.098455 → 0.136554 |
+| Allocation reduction | 99.046% | 99.201% |
+| Automatic GC cycles during run | 130 → 3 | 152 → 3 |
+| Sampled peak RSS, decimal MB | 291.992 → 147.841 | 288.616 → 150.209 |
+| Post-GC live heap, decimal MB | 0.625 → 0.616 | 0.632 → 0.613 |
+
+With only three startup collections, raw `/cpu/classes/*` metrics at the pool
+run's end cover startup rather than its whole duration: the installed runtime's
+`cpuStatsAggregate.compute` copies the last GC snapshot. Reporting the raw
+53.98%/46.47% idle ratios as full-run utilization would be wrong. The analysis
+uses the existing post-forced-GC snapshot to refresh complete capacity deltas,
+preserves the old analyzer and pre-GC values, and discloses that this endpoint
+includes cleanup GC/reporting. Refreshed pool GC/idle capacity is
+0.064%/5.546% standard and 0.051%/6.890% extended, versus baseline
+3.369%/15.260% and 3.155%/17.681%. MemStats allocation volume and GC-cycle
+deltas remain direct run measurements. Allocation pprof snapshots taken before
+refresh can likewise miss recent allocations; additional cumulative
+`alloc_space` views from `heap-after-gc.pprof` reconcile the seventeen buffers.
+
+Separate grouped user counters, 100% scheduled, show instructions/row
+236.403→230.717 standard and 266.623→257.123 extended. IPC is 2.019→1.960
+standard and 1.696→1.775 extended; no claim that every CPU metric improves.
+The parser's 1,150-byte text and 56-byte frame are unchanged. Inlined pool take,
+release and constructor costs are 32/14/8; home-hit lookup stays at 40.
+Chunk descriptors grow 24→32 bytes, and worker/producer frames 216→272 and
+168→224. Extra ownership state is included in the measured result.
+
+Worker channel waits fall 8.095→2.414 cumulative seconds standard and
+12.618→3.951 extended. Producer Running state falls 0.826→0.006 seconds
+standard, 1.141→0.008 extended; buffer clearing/allocation work largely
+disappears from its CPU profile. Producer channel-send waits grow to
+0.109/0.091 seconds as worker backpressure becomes more visible. All-worker
+waiting during producer Syscall totals 1.00/0.44 ms; sampled goroutine count
+stays at 22. These overlapping scheduler-state totals are diagnostic, not
+elapsed losses. Runtime/trace sleeps and mutex samples do not identify an
+application sleep or shared station-table lock. No new producer/worker topology
+is introduced.
+
+Evidence: local ignored `results/research/20261006/buffer-pool/` contains
+frozen sources/tests and the accepted patch, release/build/harness hashes,
+compiler/assembly, full oracles and exact counts/pool bounds, CPU/allocation/
+heap/GC/goroutine/block/mutex/trace profiles, refreshed and original CPU-class
+analysis, both timing/host windows, promoted normal-adapter checks and
+`acceptance.json`. The accepted source and documentation are committed; the
+local acceptance record stores the resulting repository commit.
+
+Next isolate two/three scan cursors using this pool/table/decoder and the same
+reader topology. Preserve sequential updates when lanes resolve to the same
+station and independently count every consumed row. Revisit SIMD against a
+matching pooled control only as a separate experiment now that the producer
+allocation constraint has changed; parallel reusable ReadAt and mmap also
+remain separate comparisons.

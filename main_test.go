@@ -58,7 +58,11 @@ func TestChunkByBytes(t *testing.T) {
 	}
 
 	indexes := chunkByBytes(bytes.NewReader(testData), 32)
-	got := chanToSlice(indexes)
+	var got []chunk
+	for c := range indexes {
+		got = append(got, chunk{data: bytes.Clone(c.data)})
+		c.release()
+	}
 
 	require.Len(t, got, len(want))
 	for i, w := range want {

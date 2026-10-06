@@ -129,13 +129,67 @@ func run(file string) error {
 	return nil
 }
 
+// chunk borrows a buffer until its worker finishes all row updates. recycle is
+// nil for caller-owned test chunks; producer chunks return data to that channel.
+// For data="Oslo;1.2\n", the parser borrows "Oslo", the table owns its clone,
+// and release can then make the buffer available for "Rome;9.9\n".
 type chunk struct {
-	data []byte
+	data    []byte
+	recycle chan []byte
 }
 
+// chunkBufferPool bounds the producer's allocations and accepts worker returns.
+// Only the producer calls take and changes allocated; workers only send slices
+// to available. With size=6 MiB and limit=17, at most 102 MiB of input buffers
+// exist, instead of allocating another 6 MiB for every chunk in a 1B-row file.
+type chunkBufferPool struct {
+	available chan []byte
+	allocated int
+	size      int
+}
+
+// newChunkBufferPool creates a lazy pool with positive size and limit. For
+// size=32, limit=2, the first two simultaneous loans allocate 64 bytes; a third
+// waits for a return. Returned buffers can be reused without clearing because
+// ReadAt fills them and EOF slices are bounded to the returned byte count.
+func newChunkBufferPool(size, limit int) *chunkBufferPool {
+	return &chunkBufferPool{available: make(chan []byte, limit), size: size}
+}
+
+// take lends one full-size buffer to the producer, preferring a returned one.
+// After borrowing A and B from a two-buffer pool, another take waits until A
+// or B is returned. No buffer is shared between outstanding chunks.
+func (p *chunkBufferPool) take() []byte {
+	select {
+	case data := <-p.available:
+		return data
+	default:
+	}
+	if p.allocated < cap(p.available) {
+		p.allocated++
+		return make([]byte, p.size)
+	}
+	return <-p.available
+}
+
+// release ends a chunk's loan after its last row update. A 23-byte view with
+// capacity=32 returns the complete 32-byte buffer, ready for the next ReadAt.
+// The channel stays open because workers can finish after the producer reaches
+// EOF. Station keys must already be owned; caller-owned chunks are unchanged.
+func (c chunk) release() {
+	if c.recycle != nil {
+		c.recycle <- c.data[:cap(c.data)]
+	}
+}
+
+// chunkByBytes keeps the existing sequential ReadAt/newline boundaries and
+// unbuffered work handoff, using at most chunkReaders+1 input buffers. Workers
+// release each loan after parsing. For "A;1.0\nB;2.0\n" with size=8, it sends
+// "A;1.0\n" then the bounded EOF view "B;2.0\n", never exposing stale bytes.
 func chunkByBytes(f io.ReaderAt, chunkSize int) chan chunk {
 	var (
-		out = make(chan chunk, chunksChanBufSize)
+		out  = make(chan chunk, chunksChanBufSize)
+		pool = newChunkBufferPool(chunkSize, chunkReaders+1)
 	)
 	go func() {
 		defer close(out)
@@ -144,10 +198,10 @@ func chunkByBytes(f io.ReaderAt, chunkSize int) chan chunk {
 		)
 		for {
 			var (
-				c          chunk
+				c          = chunk{recycle: pool.available}
 				start, end int
 
-				data = make([]byte, chunkSize)
+				data = pool.take()
 			)
 			// Start idx is always previous chunk's end +1, except
 			// for the 1st chunk.
@@ -230,6 +284,7 @@ func chunkReader(chunks chan chunk) simpleMap {
 			// Save next line's start at current index+1 (step over \n).
 			chunkView = chunkView[newlineIdx+1:]
 		}
+		chunk.release()
 	}
 
 	return out
