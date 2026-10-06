@@ -1,4 +1,18 @@
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
+
+#if defined(__aarch64__)
 #include <arm_acle.h>
+#define crc32c_byte __crc32cb
+#define crc32c_word __crc32cd
+#elif defined(__x86_64__)
+#include <nmmintrin.h>
+#define crc32c_byte(crc, byte) _mm_crc32_u8((crc), (byte))
+#define crc32c_word(crc, word) ((uint32_t)_mm_crc32_u64((crc), (word)))
+#else
+#error "c-matt-re requires AArch64 CRC32C or x86-64 SSE4.2"
+#endif
 #include <limits.h>
 #include <pthread.h>
 #include <stdbool.h>
@@ -84,11 +98,11 @@ processlines(uint8_t *beg, uint8_t *end, struct station *stations)
 			if (match) {
 				uint32_t pos = (uint32_t)(__builtin_ctzll(match) >> 3);
 				for (uint32_t i = 0; i < pos; i++)
-					hash = __crc32cb(hash, cur[i]);
+						hash = crc32c_byte(hash, cur[i]);
 				cur += pos;
 				break;
 			}
-			hash = __crc32cd(hash, word);
+			hash = crc32c_word(hash, word);
 			cur += 8;
 		}
 		uint8_t nname = (uint8_t)(cur - name);

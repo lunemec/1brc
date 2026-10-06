@@ -11,11 +11,12 @@ implementation has an optional build script and a required run script.
 ## Requirements
 
 - Bash
+- Python 3.10 or newer for full-run host quietness monitoring
 - `jq`
 - Go 1.23 or newer
 - [hyperfine](https://github.com/sharkdp/hyperfine)
 - OpenJDK 21 for the Java JVM reference
-- An Apple Silicon C11 compiler for the pinned AArch64 C reference
+- A C11 compiler with AArch64 CRC32C or x86-64 SSE4.2 support for the C reference
 - Rust and Cargo
 - GraalVM 21.0.2 `native-image` only for the optional Java native reference
 
@@ -145,16 +146,55 @@ then benchmarks the same unchanged artifact under two labels in isolated
 `A-B-B-A` blocks without cooldowns. Each block defaults to two warmups and five
 measured runs. The wrapper verifies exact output, checks that the artifact did
 not change, records a system and thermal snapshot before every block, and exits
-with status 2 when label or order drift exceeds 1%. Override only the duration
-or sample count when deliberately changing the protocol:
+with status 2 when label or order drift exceeds `DRIFT_THRESHOLD_PERCENT`
+(default 1%). This is the maximum absolute difference in mean runtime across
+pooled labels, the first and second halves, and each label's two blocks. It
+measures repeatability, independently of CPU load. Keep 1% for small-change
+optimization; 2% is a reasonable declared tolerance for broad comparisons.
+A larger tolerance changes the gate, not the observed noise or precision.
+Override the duration, sample count, or tolerance deliberately:
 
 ```sh
 PRECONDITION_SECONDS=90 RUNS=5 WARMUPS=2 \
     ./bench.sh null-control measurements_1B.txt go-lunemec
+
+DRIFT_THRESHOLD_PERCENT=2 \
+    ./bench.sh null-control measurements_10K_1B.txt go-lunemec
 ```
 
 Null-control JSON, logs, block statistics, drift analysis, health snapshots,
 and metadata are written under `results/`.
+
+Full timing runs (inputs of at least 1 GiB) now require a host quietness check.
+`benchmark_quiet.py` samples ten seconds before launching the harness and monitors
+background work every two seconds throughout the window, without adding pauses
+between timing blocks. It excludes benchmark descendants, records temperatures,
+and stops the owned benchmark if unrelated CPU work, swapping, I/O or memory
+contention exceeds its limits. Defaults permit at most 0.5 busy CPU cores in total
+and 0.25 cores per background process; one core means one logical CPU fully busy.
+Paging above 64 KiB/s rejects a window. With Linux RAM-only zram swap, page-ins
+are recorded and assessed through CPU/I/O/memory pressure; swap-outs still reject
+above that rate. Other swap devices retain the combined paging limit.
+Linux also checks kernel CPU, pressure and available memory. macOS checks process
+CPU, VM counters and reported thermal limits. An incomplete Linux process view
+fails closed, so run full comparisons on the host. Every attempted window keeps
+its `.quiet.json` report under `results/`. A passed quietness check still requires
+the declared null and order-drift checks before accepting a performance result.
+Preparatory cache reads are recorded but exempt from the I/O and paging limits;
+those limits apply once the harness marks the cache ready for timing. Background
+CPU remains checked throughout preparation and timing; preparation-only activity
+is retained as a flag, including each block's excluded warm-ups. Violations during
+measured runs stop the run. The initial idle
+preflight still requires all quietness limits to pass.
+Experiment runners can declare `--timed-process-names` to apply the I/O gate
+only to intervals where the same owned benchmark process remained active.
+This excludes report/file bookkeeping between runs from I/O rejection; every
+interval is still recorded. CPU, memory and paging gates retain their timing-phase
+coverage. Other runners keep the whole-phase I/O check.
+Linux also accounts for exited benchmark children when checking residual host
+CPU, adopts orphaned benchmark descendants and reaps them before returning.
+macOS relies on observed processes and second-resolution birth identities;
+short activity between samples remains a limitation of that process view.
 
 Before timing, the wrapper verifies the dataset and oracle checksums, builds
 each implementation, runs both validation suites, and compares its full output
@@ -183,6 +223,12 @@ reported because the Thomas JVM launcher creates a worker process.
 Reference results are valid only for the recorded hardware, OS, toolchains,
 source revisions, and protocol. Rerun them after any of those change and once
 more before publishing a final cross-language comparison.
+
+Health snapshots before each comparison pass and null-control block record
+system activity. On Linux they include memory, CPU/I/O/memory pressure, CPU
+governor, temperatures, and a one-second process sample. Run the harness outside
+a PID-isolating sandbox when the process sample must include desktop and service
+activity.
 
 The Thomas Würthinger leaderboard entry is a GraalVM native image, not a normal
 JVM run. Keep `java-thomaswue-jvm` and `java-thomaswue-native` as separate

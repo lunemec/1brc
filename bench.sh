@@ -22,6 +22,18 @@ EOF
 action=$1
 shift
 
+# Full timing runs must see the host, not an isolated sandbox process list.
+# The guard wraps the whole window, so checks add no pauses between ABBA blocks.
+if [[ "$action" == null-control || "$action" == compare ]] && [[ -f "$1" ]] &&
+    [[ $(wc -c < "$1") -ge 1073741824 ]] &&
+    [[ ${BRC_QUIET_GUARD_PID:-} != "$PPID" ]]; then
+    quiet_results=${RESULTS_DIR:-"$repo_dir/results"}
+    mkdir -p "$quiet_results"
+    quiet_report="$quiet_results/$(date -u +%Y%m%d-%H%M%S)-$(basename "${1%.txt}").quiet.json"
+    exec python3 "$repo_dir/benchmark_quiet.py" --report "$quiet_report" --defer-io-until-ready -- \
+        "$repo_dir/bench.sh" "$action" "$@"
+fi
+
 tmp_dir=$(mktemp -d "${TMPDIR:-/tmp}/1brc-bench.XXXXXX")
 run_dir="$tmp_dir/run"
 mkdir -p "$run_dir/src/test/resources" build
@@ -422,6 +434,7 @@ benchmark_pass() {
         args+=(--command-name "$implementation" "./calculate_average_${implementation}.sh > $output_quoted")
     done
 
+    capture_health_snapshot "${result%.json}.health.txt" "$pass"
     echo "benchmark pass $pass ($pass_runs runs): $(join_by_comma "$@")"
     (cd "$run_dir" && hyperfine "${args[@]}")
 }
@@ -501,6 +514,7 @@ precondition_implementation() {
 capture_health_snapshot() {
     local output=$1
     local block=$2
+    local pressure setting setting_path hwmon sensor
 
     {
         echo "[$block]"
@@ -512,6 +526,30 @@ capture_health_snapshot() {
         command -v sysctl >/dev/null && sysctl vm.swapusage 2>/dev/null || true
         if [[ $(uname -s) == Darwin ]] && command -v top >/dev/null; then
             top -l 2 -s 1 -n 15 -o cpu -stats pid,command,cpu,state || true
+        elif [[ $(uname -s) == Linux ]]; then
+            free -h || true
+            for pressure in /proc/pressure/cpu /proc/pressure/io /proc/pressure/memory; do
+                [[ -r "$pressure" ]] || continue
+                echo "[$pressure]"
+                cat "$pressure"
+            done
+            for setting in scaling_governor scaling_driver; do
+                setting_path="/sys/devices/system/cpu/cpu0/cpufreq/$setting"
+                [[ -r "$setting_path" ]] || continue
+                echo "$setting=$(<"$setting_path")"
+            done
+            echo "[temperatures_millicelsius]"
+            for hwmon in /sys/class/hwmon/hwmon*; do
+                [[ -r "$hwmon/name" ]] || continue
+                for sensor in "$hwmon"/temp*_input; do
+                    [[ -r "$sensor" ]] || continue
+                    printf '%s %s=%s\n' "$(<"$hwmon/name")" "${sensor##*/}" "$(<"$sensor")"
+                done
+            done
+            if command -v top >/dev/null; then
+                LC_ALL=C top -b -n 2 -d 1 -w 160 |
+                    awk '/^top -/ { frame++ } frame == 2 && shown++ < 24' || true
+            fi
         fi
         echo
     } >> "$output" 2>&1
@@ -671,7 +709,7 @@ case "$action" in
         runs=${RUNS:-5}
         warmups=${WARMUPS:-2}
         precondition_seconds=${PRECONDITION_SECONDS:-60}
-        drift_threshold=1
+        drift_threshold=${DRIFT_THRESHOLD_PERCENT:-1}
 
         [[ "$runs" =~ ^[1-9][0-9]*$ ]] || {
             echo "RUNS must be a positive integer" >&2
@@ -683,6 +721,10 @@ case "$action" in
         }
         [[ "$precondition_seconds" =~ ^[0-9]+$ ]] || {
             echo "PRECONDITION_SECONDS must be a non-negative integer" >&2
+            exit 1
+        }
+        [[ "$drift_threshold" =~ ^([1-9][0-9]*([.][0-9]+)?|0[.][0-9]*[1-9][0-9]*)$ ]] || {
+            echo "DRIFT_THRESHOLD_PERCENT must be a positive decimal number" >&2
             exit 1
         }
         command -v hyperfine >/dev/null || {
@@ -718,6 +760,7 @@ case "$action" in
 
         link_input "$dataset"
         precondition_implementation "$implementation" "$expected_absolute" "$precondition_seconds"
+        [[ -z ${BRC_QUIET_READY_FILE:-} ]] || touch "$BRC_QUIET_READY_FILE"
 
         blocks=(a1 b1 b2 a2)
         labels=(null-a null-b null-b null-a)
@@ -864,6 +907,7 @@ case "$action" in
         result_files=()
         write_metadata "$metadata" "$dataset" "$expected" "$runs" "$warmups" "$order" "${implementations[@]}"
         link_input "$dataset"
+        [[ -z ${BRC_QUIET_READY_FILE:-} ]] || touch "$BRC_QUIET_READY_FILE"
 
         case "$order" in
             forward)
@@ -896,6 +940,9 @@ case "$action" in
         for result in "${result_files[@]}"; do
             final_result="$final_prefix${result#"$prefix"}"
             mv "$result" "$final_result"
+            if [[ -f "${result%.json}.health.txt" ]]; then
+                mv "${result%.json}.health.txt" "${final_result%.json}.health.txt"
+            fi
             final_result_files+=("$final_result")
         done
         final_summary="$final_prefix.summary.tsv"

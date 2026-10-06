@@ -300,54 +300,30 @@ func TestMean(t *testing.T) {
 
 func TestSimpleMapSet(t *testing.T) {
 	m := newSimpleMap(maxStations)
-
-	pos := m.pos("testname")
+	name := stationName("testname")
+	pos := m.pos(name)
 	st := stats{sum: 10, min: 10, max: 10, count: 1}
-	m.set(pos, "testname", &st)
-
-	expect := bucket{
-		items: []bucketItem{
-			{
-				name:  "testname",
-				stats: &st,
-			},
-		},
-	}
-	assert.Equal(t, expect, m.data[pos])
-
+	m.set(pos, name, &st)
+	got, ok := m.get(pos, name)
+	require.True(t, ok)
+	assert.Equal(t, st, *got)
+	assert.Equal(t, 1, m.len())
 	st = stats{sum: 20, min: 20, max: 20, count: 2}
-	m.set(pos, "testname", &st)
-
-	expect = bucket{
-		items: []bucketItem{
-			{
-				name:  "testname",
-				stats: &st,
-			},
-		},
-	}
-	assert.Equal(t, expect, m.data[pos])
+	m.set(pos, name, &st)
+	got, ok = m.get(pos, name)
+	require.True(t, ok)
+	assert.Equal(t, st, *got)
+	assert.Equal(t, 1, m.len())
 }
-
 func TestSimpleMapGet(t *testing.T) {
 	m := newSimpleMap(maxStations)
-	pos := m.pos("testname")
-
+	name := stationName("testname")
+	pos := m.pos(name)
 	st := stats{sum: 10, min: 10, max: 10, count: 1}
-	m.data[pos] = bucket{
-		items: []bucketItem{
-			{
-				name:  "testname",
-				stats: &st,
-			},
-		},
-	}
-
-	expect := st
-	got, ok := m.get(pos, "testname")
-	assert.True(t, ok)
-	assert.Equal(t, expect, *got)
-
+	m.set(pos, name, &st)
+	got, ok := m.get(pos, name)
+	require.True(t, ok)
+	assert.Equal(t, st, *got)
 	got, ok = m.get(pos, "")
 	assert.False(t, ok)
 	assert.Empty(t, got)
@@ -374,4 +350,18 @@ func BenchmarkRun(b *testing.B) {
 			b.Fatal(err)
 		}
 	}
+}
+
+func TestFlatKeyIdentity(t *testing.T) {
+	names := []stationName{"A", "B", "a\x00", "a", "é", "😀", "abcdefghX", "abcdefghY", "abcdefgh", "abcdefgh\x00", "12345678abcdefghX", "12345678abcdefghY"}
+	m := newSimpleMap(maxStations)
+	for i, name := range names {
+		updateStats(m.find(name), measurement(i))
+	}
+	for i, name := range names {
+		got, ok := m.get(m.pos(name), name)
+		require.True(t, ok)
+		assert.Equal(t, stats{sum: sumT(i), min: minT(i), max: maxT(i), count: 1}, *got)
+	}
+	assert.Equal(t, len(names), m.len())
 }

@@ -213,11 +213,15 @@ func chunkReader(chunks chan chunk) simpleMap {
 				break
 			}
 
-			pos := out.pos(name)
-			stationStats, ok := out.get(pos, name)
-			if !ok {
-				stationStats = &stats{}
-				out.set(pos, name, stationStats)
+			var hash uint64
+			if len(name) <= 8 {
+				hash = bits.RotateLeft64(stationWord(name)*0x517cc1b727220a95, 17)
+			} else {
+				hash = stationFingerprintLong(name)
+			}
+			stationStats := out.homeHit(name, hash)
+			if stationStats == nil {
+				stationStats = out.findSlow(name, hash)
 			}
 			updateStats(stationStats, measurement)
 			// Save next line's start at current index+1 (step over \n).
@@ -314,9 +318,10 @@ func updateStats(stats *stats, measurement measurement) {
 // sumChunk merges the chunks from each worker into final output map.
 // The 1st chunk is reused, and this function takes 150us in the worst case.
 func sumChunk(sumStationData simpleMap, stationDataChunk simpleMap) {
-	for pos, bucketItem := range stationDataChunk.Iter() {
+	for _, bucketItem := range stationDataChunk.Iter() {
 		stationName, stationStats := bucketItem.name, bucketItem.stats
 
+		pos := sumStationData.pos(stationName)
 		sumStationStats, ok := sumStationData.get(pos, stationName)
 		if !ok {
 			sumStationStats = &stats{
@@ -430,110 +435,128 @@ func mean(sum sumT, count countT) float64 {
 	return float64(quotient) / 10
 }
 
-// simpleMap is array backed map, it turns out that for this
-// very specific and simple case it is faster than most implementations.
+// simpleMap uses 32K inline entries and a complete short-name fingerprint.
+const flatSlots = 32768
+const flatMask = flatSlots - 1
+
 type simpleMap struct {
-	data     []bucket
+	data     []flatEntry
 	capacity int
 	length   int
 }
-
-type bucket struct {
-	items []bucketItem
+type flatEntry struct {
+	name  stationName
+	stats stats
+	hash  uint64
 }
-
 type bucketItem struct {
 	stats *stats
 	name  stationName
 }
 
-func newSimpleMap(capacity int) simpleMap {
-	m := simpleMap{
-		capacity: capacity,
-		data:     make([]bucket, capacity),
-	}
-	return m
+func newSimpleMap(_ int) simpleMap {
+	return simpleMap{capacity: flatSlots, data: make([]flatEntry, flatSlots)}
 }
-
-func (m *simpleMap) len() int {
-	return m.length
-}
-
+func (m *simpleMap) len() int { return m.length }
 func (m *simpleMap) Iter() iter.Seq2[uint32, bucketItem] {
-	return func(yield func(pos uint32, item bucketItem) bool) {
-		for bucketIndex, bucket := range m.data {
-			for _, bucketItem := range bucket.items {
-				if !yield(uint32(bucketIndex), bucketItem) {
-					return
-				}
+	return func(yield func(uint32, bucketItem) bool) {
+		for i := range m.data {
+			entry := &m.data[i]
+			if entry.name != "" && !yield(uint32(i), bucketItem{stats: &entry.stats, name: entry.name}) {
+				return
 			}
 		}
 	}
 }
-
-// pos returns position in the data array so we can
-// avoid re-hashing the same value when doing get/set
-// in the same loop.
-func (m *simpleMap) pos(name stationName) uint32 {
-	return stationPos(name, m.capacity)
+func stationWord(name stationName) uint64 {
+	if len(name) >= 8 {
+		return binary.LittleEndian.Uint64([]byte(name))
+	}
+	var word uint64
+	shift := 0
+	if len(name) >= 4 {
+		word = uint64(binary.LittleEndian.Uint32([]byte(name)))
+		name = name[4:]
+		shift = 32
+	}
+	if len(name) >= 2 {
+		word |= uint64(binary.LittleEndian.Uint16([]byte(name))) << shift
+		name = name[2:]
+		shift += 16
+	}
+	if len(name) > 0 {
+		word |= uint64(name[0]) << shift
+	}
+	return word
+}
+func stationFingerprint(name stationName) uint64 {
+	if len(name) <= 8 {
+		return bits.RotateLeft64(stationWord(name)*0x517cc1b727220a95, 17)
+	}
+	return stationFingerprintLong(name)
 }
 
-func (m *simpleMap) get(pos uint32, name stationName) (*stats, bool) {
-	bucket := m.data[pos]
-	// Fast-path for empty bucket.
-	if len(bucket.items) == 0 {
-		return nil, false
+func stationFingerprintLong(name stationName) uint64 {
+	word := stationWord(name)
+	for offset := 8; offset < len(name); offset += 8 {
+		word = bits.RotateLeft64(word*0x517cc1b727220a95^stationWord(name[offset:]), 17)
 	}
-	// Fast-path for bucket of 1.
-	if len(bucket.items) == 1 {
-		if bucket.items[0].name != name {
+	return bits.RotateLeft64(word*0x517cc1b727220a95, 17)
+}
+
+func (m *simpleMap) pos(name stationName) uint32 {
+	return uint32(stationFingerprint(name)) & flatMask
+}
+
+// homeHit keeps the common probe independent of insertion and probe-loop work.
+func (m *simpleMap) homeHit(name stationName, hash uint64) *stats {
+	entry := &m.data[uint32(hash)&flatMask]
+	if entry.hash == hash && len(entry.name) == len(name) && (len(name) <= 8 || entry.name == name) {
+		return &entry.stats
+	}
+	return nil
+}
+
+func (m *simpleMap) find(name stationName) *stats {
+	hash := stationFingerprint(name)
+	if hit := m.homeHit(name, hash); hit != nil {
+		return hit
+	}
+	return m.findSlow(name, hash)
+}
+
+// findSlow starts at the home slot, which may be empty, and never rehashes.
+func (m *simpleMap) findSlow(name stationName, hash uint64) *stats {
+	pos := uint32(hash) & flatMask
+	for {
+		entry := &m.data[pos]
+		if entry.hash == hash && len(entry.name) == len(name) && (len(name) <= 8 || entry.name == name) {
+			return &entry.stats
+		}
+		if entry.name == "" {
+			entry.name = stationName(strings.Clone(string(name)))
+			entry.hash = hash
+			m.length++
+			return &entry.stats
+		}
+		pos = (pos + 1) & flatMask
+	}
+}
+func (m *simpleMap) get(pos uint32, name stationName) (*stats, bool) {
+	hash := stationFingerprint(name)
+	for {
+		entry := &m.data[pos]
+		if entry.name == "" {
 			return nil, false
 		}
-
-		return bucket.items[0].stats, true
-	}
-
-	for _, item := range bucket.items {
-		if item.name == name {
-			return item.stats, true
+		if entry.hash == hash && len(entry.name) == len(name) && (len(name) <= 8 || entry.name == name) {
+			return &entry.stats, true
 		}
+		pos = (pos + 1) & flatMask
 	}
-
-	return nil, false
 }
-
-func (m *simpleMap) set(pos uint32, name stationName, st *stats) {
-	bucket := m.data[pos]
-	if len(bucket.items) == 0 {
-		// Empty bucket, add it there.
-		bucket.items = make([]bucketItem, 0, 10)
-		m.length++
-		bucket.items = append(bucket.items, bucketItem{
-			name:  name,
-			stats: st,
-		})
-		m.data[pos] = bucket
-		return
-	}
-
-	for i, item := range bucket.items {
-		// Non-empty bucket, find which item in bucket are we
-		// and set.
-		if item.name == name {
-			item.stats = st
-			bucket.items[i] = item
-			return
-		}
-	}
-
-	// Non-empty bucket, not yet in any of the items,
-	// append at the end.
-	m.length++
-	bucket.items = append(bucket.items, bucketItem{
-		name:  name,
-		stats: st,
-	})
-	m.data[pos] = bucket
+func (m *simpleMap) set(_ uint32, name stationName, st *stats) {
+	*m.find(name) = *st
 }
 
 // stationPos calculates position in slice of our simple hashmap

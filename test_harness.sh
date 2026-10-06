@@ -108,7 +108,7 @@ printf '%s\n' null-a null-b null-b null-a > "$expected_calls"
 cmp -s "$expected_calls" "$calls"
 jq -e '
     [.blocks[].label] == ["null-a", "null-b", "null-b", "null-a"] and
-    .gate.pass == true
+    .gate.pass == true and .gate.threshold_percent == 1
 ' "$tmp_dir/results/"*.analysis.json >/dev/null
 cmp -s "$tmp_dir/sentinel" "$sentinel"
 
@@ -132,6 +132,37 @@ else
     }
 fi
 jq -e '.gate.pass == false' "$tmp_dir/results-fail/"*.analysis.json >/dev/null
+
+mkdir "$tmp_dir/results-relaxed"
+: > "$calls"
+PATH="$tmp_dir/bin:$PATH" \
+HYPERFINE_CALLS="$calls" \
+HYPERFINE_TIMES=1.0,1.0,1.015,1.015 \
+PRECONDITION_SECONDS=0 \
+RUNS=1 \
+WARMUPS=0 \
+DRIFT_THRESHOLD_PERCENT=2.0 \
+RESULTS_DIR="$tmp_dir/results-relaxed" \
+    ./bench.sh null-control "$null_input" java-baseline >/dev/null
+jq -e '
+    .gate.threshold_percent == 2 and .gate.pass == true and
+    .gate.max_abs_drift_percent > 1 and .gate.max_abs_drift_percent < 2
+' "$tmp_dir/results-relaxed/"*.analysis.json >/dev/null
+
+for invalid_threshold in 0 -1 invalid 1%; do
+    if DRIFT_THRESHOLD_PERCENT="$invalid_threshold" \
+        ./bench.sh null-control "$null_input" java-baseline > "$tmp_dir/invalid-threshold.log" 2>&1; then
+        echo "invalid threshold unexpectedly accepted: $invalid_threshold" >&2
+        exit 1
+    else
+        exit_code=$?
+        [[ "$exit_code" -eq 1 ]] || {
+            echo "invalid threshold exited $exit_code instead of 1" >&2
+            exit 1
+        }
+    fi
+    [[ $(<"$tmp_dir/invalid-threshold.log") == *'DRIFT_THRESHOLD_PERCENT must be a positive decimal number'* ]]
+done
 
 cleanup
 trap - EXIT

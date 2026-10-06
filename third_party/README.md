@@ -8,7 +8,7 @@ upstream repository moves.
 | Corpus generators and baseline | [gunnarmorling/1brc@241d42c](https://github.com/gunnarmorling/1brc/commit/241d42ca6609b6bc32b403b1f4ee4d1fe6e325f8) | Apache-2.0; station data is CC BY 4.0 | Baseline uses fixed-point aggregation for exact challenge rounding |
 | Upstream `test.sh` and `tocsv.sh` | [gunnarmorling/1brc@241d42c](https://github.com/gunnarmorling/1brc/commit/241d42ca6609b6bc32b403b1f4ee4d1fe6e325f8) | Apache-2.0 | GNU-only colored `diff` flag removed for Apple `diff`; runs in a disposable workspace |
 | `java-thomaswue-jvm`, `java-thomaswue-native` | [gunnarmorling/1brc@241d42c](https://github.com/gunnarmorling/1brc/commit/241d42ca6609b6bc32b403b1f4ee4d1fe6e325f8) | Apache-2.0 | Exact integer rounding in output formatting |
-| `c-matt-re` | [matt-re/1brc@1465eaf](https://github.com/matt-re/1brc/commit/1465eaf0b45db10554d3da014945c9a2d5739e4d) | MIT | Handle tiny inputs, implement challenge rounding, and match Java UTF-16 output ordering |
+| `c-matt-re` | [matt-re/1brc@1465eaf](https://github.com/matt-re/1brc/commit/1465eaf0b45db10554d3da014945c9a2d5739e4d) | MIT | Handle tiny inputs, implement challenge rounding, match Java UTF-16 output ordering, and support equivalent x86-64 SSE4.2 CRC32C intrinsics with POSIX file-size declarations |
 | `rust-mtopolnik` | [mtopolnik/rust-1brc@f5b1862](https://github.com/mtopolnik/rust-1brc/commit/f5b186298969b4ee3fc86da80f0e8531098f6a1f) | MIT | Use an `i64` sum, explicit challenge rounding, and Java UTF-16 output ordering |
 
 The Java, C, and Rust rounding changes avoid floating-point edge cases and use
