@@ -169,8 +169,7 @@ def memory_figure(memory):
 
 def measurement_table(windows):
     rows = ["# Recomputed acceptance measurements", "",
-            "Each mean uses every retained `seconds` observation. The calculation excludes no values. Each variant has ten observations in an A/B/B/A comparison.", "",
-            "Each block excludes two warmup runs. All null controls and order results pass the declared 2% bound. Original reports establish whether host activity met the measurement rules.", "",
+            "Each mean uses all ten `seconds` observations per version, with two excluded warmups per block. Null and order results pass the declared 2% bound. Host validity comes from the original reports.", "",
             "| Change | Corpus / window | Baseline mean (s) | Candidate mean (s) | Runtime reduction | Null max drift | Baseline / candidate order drift |",
             "| --- | --- | ---: | ---: | ---: | ---: | --- |"]
     for w in windows:
@@ -179,8 +178,7 @@ def measurement_table(windows):
         drift = w["order_drift_percent"]
         label = ("10K" if w["corpus"] == "10k" else "Standard") + " / " + w["window"].split("-")[-1]
         rows.append(f'| {LABELS[w["experiment"]]} | {label} | {ma:.6f} | {mb:.6f} | {reduction(w):.3f}% | {w["null_gate"]["max_abs_drift_percent"]:.3f}% | {drift[a]:+.3f}% / {drift[b]:+.3f}% |')
-    rows += ["", "[Part 2](../02-measuring-improvements.md) defines the table's measurement terms. [timings.json](timings.json) preserves the source observations and their report, binary, and input identities. [generate_assets.py](../tools/generate_assets.py) recreates the figures and this table.", "",
-             "The table keeps independent repeats separate. Each row compares a candidate with its baseline in the same window. These gains do not establish a total improvement across all changes.", ""]
+    rows += ["", "[Raw observations](timings.json) retain the source records. [Part 2](../02-measuring-improvements.md) explains the method. Each row is a separate comparison, not part of a cumulative gain.", ""]
     (BLOG / "data/measurements.md").write_text("\n".join(rows))
 
 
