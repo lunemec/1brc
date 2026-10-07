@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="340" viewBox="0 0 1080 340" role="img" aria-labelledby="title desc">
+<title id="title">Buffer reuse reduces allocation volume</title>
+<desc id="desc">Instrumented diagnostic runs show total allocation in decimal gigabytes. The horizontal axis is logarithmic, from 0.01 to 20 gigabytes; bar lengths are not linear ratios.</desc>
+<rect width="100%" height="100%" fill="#ffffff"/>
+<style>text{font-family:DejaVu Sans,Arial,sans-serif;fill:#18252f;font-size:13px}.muted{fill:#52616b;font-size:12px}.title{font-size:21px;font-weight:bold}.grid{stroke:#dfe5e8;stroke-width:1}</style>
+<text x="24.00" y="34.00" class="title" text-anchor="start">Buffer reuse: total allocation volume</text>
+<text x="24.00" y="58.00" class="muted" text-anchor="start">Instrumented diagnostic runs · decimal GB · logarithmic horizontal axis</text>
+<line x1="240.00" y1="82.00" x2="240.00" y2="270.00" stroke="#dfe5e8" stroke-width="1"/>
+<text x="240.00" y="293.00" class="muted" text-anchor="middle">0.01</text>
+<line x1="424.79" y1="82.00" x2="424.79" y2="270.00" stroke="#dfe5e8" stroke-width="1"/>
+<text x="424.79" y="293.00" class="muted" text-anchor="middle">0.1</text>
+<line x1="609.58" y1="82.00" x2="609.58" y2="270.00" stroke="#dfe5e8" stroke-width="1"/>
+<text x="609.58" y="293.00" class="muted" text-anchor="middle">1</text>
+<line x1="794.37" y1="82.00" x2="794.37" y2="270.00" stroke="#dfe5e8" stroke-width="1"/>
+<text x="794.37" y="293.00" class="muted" text-anchor="middle">10</text>
+<line x1="850.00" y1="82.00" x2="850.00" y2="270.00" stroke="#dfe5e8" stroke-width="1"/>
+<text x="850.00" y="293.00" class="muted" text-anchor="middle">20</text>
+<text x="224.00" y="108.00" class="" text-anchor="end">standard · baseline</text>
+<rect x="240" y="92" width="580.349" height="25" rx="2" fill="#245b91"/>
+<text x="830.35" y="108.00" class="" text-anchor="start">13.822078 GB</text>
+<text x="224.00" y="151.00" class="" text-anchor="end">standard · pool</text>
+<rect x="240" y="135" width="206.961" height="25" rx="2" fill="#23734e"/>
+<text x="456.96" y="151.00" class="" text-anchor="start">0.131817 GB</text>
+<text x="224.00" y="194.00" class="" text-anchor="end">10k · baseline</text>
+<rect x="240" y="178" width="597.421" height="25" rx="2" fill="#245b91"/>
+<text x="847.42" y="194.00" class="" text-anchor="start">17.098455 GB</text>
+<text x="224.00" y="237.00" class="" text-anchor="end">10k · pool</text>
+<rect x="240" y="221" width="209.794" height="25" rx="2" fill="#23734e"/>
+<text x="459.79" y="237.00" class="" text-anchor="start">0.136554 GB</text>
+<text x="24.00" y="326.00" class="muted" text-anchor="start">Total allocated over a run is distinct from live heap and RSS. Timing comparisons use separate uninstrumented runs.</text>
+</svg>

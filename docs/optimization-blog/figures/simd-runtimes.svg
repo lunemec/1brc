@@ -1,0 +1,169 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="732" viewBox="0 0 1080 732" role="img" aria-labelledby="title desc">
+<title id="title">Pooled AVX2 observations</title>
+<desc id="desc">Dots are all individual measured process runtimes; vertical marks show arithmetic means. Each panel uses its own labeled zoomed horizontal axis in seconds. No outliers are removed.</desc>
+<rect width="100%" height="100%" fill="#ffffff"/>
+<style>text{font-family:DejaVu Sans,Arial,sans-serif;fill:#18252f;font-size:13px}.muted{fill:#52616b;font-size:12px}.title{font-size:21px;font-weight:bold}.grid{stroke:#dfe5e8;stroke-width:1}</style>
+<text x="24.00" y="34.00" class="title" text-anchor="start">Pooled AVX2: every confirmation observation</text>
+<text x="24.00" y="58.00" class="muted" text-anchor="start">Dots: measured runs · Vertical mark: arithmetic mean · Each panel has its own zoomed time axis</text>
+<text x="24.00" y="95.00" class="" text-anchor="start">Standard · window 3</text>
+<text x="850.00" y="95.00" class="" text-anchor="start">1.189% less time</text>
+<line x1="240.00" y1="108.00" x2="240.00" y2="195.00" stroke="#dfe5e8" stroke-width="1"/>
+<text x="240.00" y="211.00" class="muted" text-anchor="middle">1.874</text>
+<line x1="380.00" y1="108.00" x2="380.00" y2="195.00" stroke="#dfe5e8" stroke-width="1"/>
+<text x="380.00" y="211.00" class="muted" text-anchor="middle">1.890</text>
+<line x1="520.00" y1="108.00" x2="520.00" y2="195.00" stroke="#dfe5e8" stroke-width="1"/>
+<text x="520.00" y="211.00" class="muted" text-anchor="middle">1.905</text>
+<line x1="660.00" y1="108.00" x2="660.00" y2="195.00" stroke="#dfe5e8" stroke-width="1"/>
+<text x="660.00" y="211.00" class="muted" text-anchor="middle">1.921</text>
+<line x1="800.00" y1="108.00" x2="800.00" y2="195.00" stroke="#dfe5e8" stroke-width="1"/>
+<text x="800.00" y="211.00" class="muted" text-anchor="middle">1.937</text>
+<text x="224.00" y="134.00" class="" text-anchor="end">Baseline</text>
+<circle cx="728.826" cy="122.400" r="3.7" fill="#245b91" fill-opacity="0.78"><title>plain: 1.928947779 seconds</title></circle>
+<circle cx="580.747" cy="126.200" r="3.7" fill="#245b91" fill-opacity="0.78"><title>plain: 1.912303671 seconds</title></circle>
+<circle cx="486.838" cy="130.000" r="3.7" fill="#245b91" fill-opacity="0.78"><title>plain: 1.901748290 seconds</title></circle>
+<circle cx="635.404" cy="133.800" r="3.7" fill="#245b91" fill-opacity="0.78"><title>plain: 1.918447092 seconds</title></circle>
+<circle cx="664.757" cy="137.600" r="3.7" fill="#245b91" fill-opacity="0.78"><title>plain: 1.921746405 seconds</title></circle>
+<circle cx="624.261" cy="122.400" r="3.7" fill="#245b91" fill-opacity="0.78"><title>plain: 1.917194701 seconds</title></circle>
+<circle cx="671.344" cy="126.200" r="3.7" fill="#245b91" fill-opacity="0.78"><title>plain: 1.922486818 seconds</title></circle>
+<circle cx="573.141" cy="130.000" r="3.7" fill="#245b91" fill-opacity="0.78"><title>plain: 1.911448788 seconds</title></circle>
+<circle cx="720.716" cy="133.800" r="3.7" fill="#245b91" fill-opacity="0.78"><title>plain: 1.928036187 seconds</title></circle>
+<circle cx="618.911" cy="137.600" r="3.7" fill="#245b91" fill-opacity="0.78"><title>plain: 1.916593304 seconds</title></circle>
+<line x1="630.49" y1="116.00" x2="630.49" y2="144.00" stroke="#245b91" stroke-width="3"/>
+<text x="850.00" y="134.00" class="" text-anchor="start">mean 1.917895 s</text>
+<text x="224.00" y="177.00" class="" text-anchor="end">Candidate</text>
+<circle cx="311.174" cy="165.400" r="3.7" fill="#23734e" fill-opacity="0.78"><title>simd: 1.882003585 seconds</title></circle>
+<circle cx="426.802" cy="169.200" r="3.7" fill="#23734e" fill-opacity="0.78"><title>simd: 1.895000224 seconds</title></circle>
+<circle cx="473.615" cy="173.000" r="3.7" fill="#23734e" fill-opacity="0.78"><title>simd: 1.900261983 seconds</title></circle>
+<circle cx="448.950" cy="176.800" r="3.7" fill="#23734e" fill-opacity="0.78"><title>simd: 1.897489651 seconds</title></circle>
+<circle cx="524.917" cy="180.600" r="3.7" fill="#23734e" fill-opacity="0.78"><title>simd: 1.906028379 seconds</title></circle>
+<circle cx="479.778" cy="165.400" r="3.7" fill="#23734e" fill-opacity="0.78"><title>simd: 1.900954690 seconds</title></circle>
+<circle cx="449.140" cy="169.200" r="3.7" fill="#23734e" fill-opacity="0.78"><title>simd: 1.897510972 seconds</title></circle>
+<circle cx="408.316" cy="173.000" r="3.7" fill="#23734e" fill-opacity="0.78"><title>simd: 1.892922326 seconds</title></circle>
+<circle cx="336.368" cy="176.800" r="3.7" fill="#23734e" fill-opacity="0.78"><title>simd: 1.884835403 seconds</title></circle>
+<circle cx="417.929" cy="180.600" r="3.7" fill="#23734e" fill-opacity="0.78"><title>simd: 1.894002837 seconds</title></circle>
+<line x1="427.70" y1="159.00" x2="427.70" y2="187.00" stroke="#23734e" stroke-width="3"/>
+<text x="850.00" y="177.00" class="" text-anchor="start">mean 1.895101 s</text>
+<text x="24.00" y="231.00" class="muted" text-anchor="start">Fresh null max drift: 0.482% · 2% declared gate · host/order checks passed</text>
+<line x1="24.00" y1="239.00" x2="1040.00" y2="239.00" stroke="#dfe5e8" stroke-width="1"/>
+<text x="24.00" y="249.00" class="" text-anchor="start">Standard · window 4</text>
+<text x="850.00" y="249.00" class="" text-anchor="start">1.335% less time</text>
+<line x1="240.00" y1="262.00" x2="240.00" y2="349.00" stroke="#dfe5e8" stroke-width="1"/>
+<text x="240.00" y="365.00" class="muted" text-anchor="middle">1.864</text>
+<line x1="380.00" y1="262.00" x2="380.00" y2="349.00" stroke="#dfe5e8" stroke-width="1"/>
+<text x="380.00" y="365.00" class="muted" text-anchor="middle">1.885</text>
+<line x1="520.00" y1="262.00" x2="520.00" y2="349.00" stroke="#dfe5e8" stroke-width="1"/>
+<text x="520.00" y="365.00" class="muted" text-anchor="middle">1.905</text>
+<line x1="660.00" y1="262.00" x2="660.00" y2="349.00" stroke="#dfe5e8" stroke-width="1"/>
+<text x="660.00" y="365.00" class="muted" text-anchor="middle">1.925</text>
+<line x1="800.00" y1="262.00" x2="800.00" y2="349.00" stroke="#dfe5e8" stroke-width="1"/>
+<text x="800.00" y="365.00" class="muted" text-anchor="middle">1.945</text>
+<text x="224.00" y="288.00" class="" text-anchor="end">Baseline</text>
+<circle cx="732.121" cy="276.400" r="3.7" fill="#245b91" fill-opacity="0.78"><title>plain: 1.935056940 seconds</title></circle>
+<circle cx="443.163" cy="280.200" r="3.7" fill="#245b91" fill-opacity="0.78"><title>plain: 1.893617652 seconds</title></circle>
+<circle cx="518.429" cy="284.000" r="3.7" fill="#245b91" fill-opacity="0.78"><title>plain: 1.904411461 seconds</title></circle>
+<circle cx="557.713" cy="287.800" r="3.7" fill="#245b91" fill-opacity="0.78"><title>plain: 1.910045236 seconds</title></circle>
+<circle cx="674.817" cy="291.600" r="3.7" fill="#245b91" fill-opacity="0.78"><title>plain: 1.926839000 seconds</title></circle>
+<circle cx="589.229" cy="276.400" r="3.7" fill="#245b91" fill-opacity="0.78"><title>plain: 1.914564912 seconds</title></circle>
+<circle cx="586.936" cy="280.200" r="3.7" fill="#245b91" fill-opacity="0.78"><title>plain: 1.914235953 seconds</title></circle>
+<circle cx="442.637" cy="284.000" r="3.7" fill="#245b91" fill-opacity="0.78"><title>plain: 1.893542190 seconds</title></circle>
+<circle cx="549.763" cy="287.800" r="3.7" fill="#245b91" fill-opacity="0.78"><title>plain: 1.908905046 seconds</title></circle>
+<circle cx="600.721" cy="291.600" r="3.7" fill="#245b91" fill-opacity="0.78"><title>plain: 1.916212923 seconds</title></circle>
+<line x1="569.55" y1="270.00" x2="569.55" y2="298.00" stroke="#245b91" stroke-width="3"/>
+<text x="850.00" y="288.00" class="" text-anchor="start">mean 1.911743 s</text>
+<text x="224.00" y="331.00" class="" text-anchor="end">Candidate</text>
+<circle cx="381.154" cy="319.400" r="3.7" fill="#23734e" fill-opacity="0.78"><title>simd: 1.884725010 seconds</title></circle>
+<circle cx="382.163" cy="323.200" r="3.7" fill="#23734e" fill-opacity="0.78"><title>simd: 1.884869660 seconds</title></circle>
+<circle cx="434.554" cy="327.000" r="3.7" fill="#23734e" fill-opacity="0.78"><title>simd: 1.892382984 seconds</title></circle>
+<circle cx="376.576" cy="330.800" r="3.7" fill="#23734e" fill-opacity="0.78"><title>simd: 1.884068500 seconds</title></circle>
+<circle cx="366.801" cy="334.600" r="3.7" fill="#23734e" fill-opacity="0.78"><title>simd: 1.882666663 seconds</title></circle>
+<circle cx="357.476" cy="319.400" r="3.7" fill="#23734e" fill-opacity="0.78"><title>simd: 1.881329307 seconds</title></circle>
+<circle cx="307.879" cy="323.200" r="3.7" fill="#23734e" fill-opacity="0.78"><title>simd: 1.874216605 seconds</title></circle>
+<circle cx="454.395" cy="327.000" r="3.7" fill="#23734e" fill-opacity="0.78"><title>simd: 1.895228335 seconds</title></circle>
+<circle cx="426.925" cy="330.800" r="3.7" fill="#23734e" fill-opacity="0.78"><title>simd: 1.891288901 seconds</title></circle>
+<circle cx="427.951" cy="334.600" r="3.7" fill="#23734e" fill-opacity="0.78"><title>simd: 1.891436048 seconds</title></circle>
+<line x1="391.59" y1="313.00" x2="391.59" y2="341.00" stroke="#23734e" stroke-width="3"/>
+<text x="850.00" y="331.00" class="" text-anchor="start">mean 1.886221 s</text>
+<text x="24.00" y="385.00" class="muted" text-anchor="start">Fresh null max drift: 0.287% · 2% declared gate · host/order checks passed</text>
+<line x1="24.00" y1="393.00" x2="1040.00" y2="393.00" stroke="#dfe5e8" stroke-width="1"/>
+<text x="24.00" y="403.00" class="" text-anchor="start">10K · window 3</text>
+<text x="850.00" y="403.00" class="" text-anchor="start">1.646% less time</text>
+<line x1="240.00" y1="416.00" x2="240.00" y2="503.00" stroke="#dfe5e8" stroke-width="1"/>
+<text x="240.00" y="519.00" class="muted" text-anchor="middle">2.328</text>
+<line x1="380.00" y1="416.00" x2="380.00" y2="503.00" stroke="#dfe5e8" stroke-width="1"/>
+<text x="380.00" y="519.00" class="muted" text-anchor="middle">2.365</text>
+<line x1="520.00" y1="416.00" x2="520.00" y2="503.00" stroke="#dfe5e8" stroke-width="1"/>
+<text x="520.00" y="519.00" class="muted" text-anchor="middle">2.402</text>
+<line x1="660.00" y1="416.00" x2="660.00" y2="503.00" stroke="#dfe5e8" stroke-width="1"/>
+<text x="660.00" y="519.00" class="muted" text-anchor="middle">2.439</text>
+<line x1="800.00" y1="416.00" x2="800.00" y2="503.00" stroke="#dfe5e8" stroke-width="1"/>
+<text x="800.00" y="519.00" class="muted" text-anchor="middle">2.475</text>
+<text x="224.00" y="442.00" class="" text-anchor="end">Baseline</text>
+<circle cx="552.412" cy="430.400" r="3.7" fill="#245b91" fill-opacity="0.78"><title>plain: 2.410318767 seconds</title></circle>
+<circle cx="497.947" cy="434.200" r="3.7" fill="#245b91" fill-opacity="0.78"><title>plain: 2.396009570 seconds</title></circle>
+<circle cx="458.003" cy="438.000" r="3.7" fill="#245b91" fill-opacity="0.78"><title>plain: 2.385515305 seconds</title></circle>
+<circle cx="486.113" cy="441.800" r="3.7" fill="#245b91" fill-opacity="0.78"><title>plain: 2.392900438 seconds</title></circle>
+<circle cx="590.103" cy="445.600" r="3.7" fill="#245b91" fill-opacity="0.78"><title>plain: 2.420221140 seconds</title></circle>
+<circle cx="533.913" cy="430.400" r="3.7" fill="#245b91" fill-opacity="0.78"><title>plain: 2.405458687 seconds</title></circle>
+<circle cx="732.121" cy="434.200" r="3.7" fill="#245b91" fill-opacity="0.78"><title>plain: 2.457532718 seconds</title></circle>
+<circle cx="581.068" cy="438.000" r="3.7" fill="#245b91" fill-opacity="0.78"><title>plain: 2.417847402 seconds</title></circle>
+<circle cx="592.652" cy="441.800" r="3.7" fill="#245b91" fill-opacity="0.78"><title>plain: 2.420890933 seconds</title></circle>
+<circle cx="681.104" cy="445.600" r="3.7" fill="#245b91" fill-opacity="0.78"><title>plain: 2.444129230 seconds</title></circle>
+<line x1="570.54" y1="424.00" x2="570.54" y2="452.00" stroke="#245b91" stroke-width="3"/>
+<text x="850.00" y="442.00" class="" text-anchor="start">mean 2.415082 s</text>
+<text x="224.00" y="485.00" class="" text-anchor="end">Candidate</text>
+<circle cx="329.266" cy="473.400" r="3.7" fill="#23734e" fill-opacity="0.78"><title>simd: 2.351693032 seconds</title></circle>
+<circle cx="628.039" cy="477.200" r="3.7" fill="#23734e" fill-opacity="0.78"><title>simd: 2.430187820 seconds</title></circle>
+<circle cx="333.442" cy="481.000" r="3.7" fill="#23734e" fill-opacity="0.78"><title>simd: 2.352790298 seconds</title></circle>
+<circle cx="587.634" cy="484.800" r="3.7" fill="#23734e" fill-opacity="0.78"><title>simd: 2.419572383 seconds</title></circle>
+<circle cx="378.594" cy="488.600" r="3.7" fill="#23734e" fill-opacity="0.78"><title>simd: 2.364652689 seconds</title></circle>
+<circle cx="307.879" cy="473.400" r="3.7" fill="#23734e" fill-opacity="0.78"><title>simd: 2.346074114 seconds</title></circle>
+<circle cx="440.425" cy="477.200" r="3.7" fill="#23734e" fill-opacity="0.78"><title>simd: 2.380897180 seconds</title></circle>
+<circle cx="319.187" cy="481.000" r="3.7" fill="#23734e" fill-opacity="0.78"><title>simd: 2.349045121 seconds</title></circle>
+<circle cx="559.287" cy="484.800" r="3.7" fill="#23734e" fill-opacity="0.78"><title>simd: 2.412124982 seconds</title></circle>
+<circle cx="309.025" cy="488.600" r="3.7" fill="#23734e" fill-opacity="0.78"><title>simd: 2.346375197 seconds</title></circle>
+<line x1="419.28" y1="467.00" x2="419.28" y2="495.00" stroke="#23734e" stroke-width="3"/>
+<text x="850.00" y="485.00" class="" text-anchor="start">mean 2.375341 s</text>
+<text x="24.00" y="539.00" class="muted" text-anchor="start">Fresh null max drift: 0.853% · 2% declared gate · host/order checks passed</text>
+<line x1="24.00" y1="547.00" x2="1040.00" y2="547.00" stroke="#dfe5e8" stroke-width="1"/>
+<text x="24.00" y="557.00" class="" text-anchor="start">10K · window 4</text>
+<text x="850.00" y="557.00" class="" text-anchor="start">1.045% less time</text>
+<line x1="240.00" y1="570.00" x2="240.00" y2="657.00" stroke="#dfe5e8" stroke-width="1"/>
+<text x="240.00" y="673.00" class="muted" text-anchor="middle">2.308</text>
+<line x1="380.00" y1="570.00" x2="380.00" y2="657.00" stroke="#dfe5e8" stroke-width="1"/>
+<text x="380.00" y="673.00" class="muted" text-anchor="middle">2.336</text>
+<line x1="520.00" y1="570.00" x2="520.00" y2="657.00" stroke="#dfe5e8" stroke-width="1"/>
+<text x="520.00" y="673.00" class="muted" text-anchor="middle">2.364</text>
+<line x1="660.00" y1="570.00" x2="660.00" y2="657.00" stroke="#dfe5e8" stroke-width="1"/>
+<text x="660.00" y="673.00" class="muted" text-anchor="middle">2.392</text>
+<line x1="800.00" y1="570.00" x2="800.00" y2="657.00" stroke="#dfe5e8" stroke-width="1"/>
+<text x="800.00" y="673.00" class="muted" text-anchor="middle">2.420</text>
+<text x="224.00" y="596.00" class="" text-anchor="end">Baseline</text>
+<circle cx="690.538" cy="584.400" r="3.7" fill="#245b91" fill-opacity="0.78"><title>plain: 2.397788921 seconds</title></circle>
+<circle cx="519.378" cy="588.200" r="3.7" fill="#245b91" fill-opacity="0.78"><title>plain: 2.363537137 seconds</title></circle>
+<circle cx="710.370" cy="592.000" r="3.7" fill="#245b91" fill-opacity="0.78"><title>plain: 2.401757582 seconds</title></circle>
+<circle cx="732.121" cy="595.800" r="3.7" fill="#245b91" fill-opacity="0.78"><title>plain: 2.406110350 seconds</title></circle>
+<circle cx="515.605" cy="599.600" r="3.7" fill="#245b91" fill-opacity="0.78"><title>plain: 2.362782054 seconds</title></circle>
+<circle cx="482.779" cy="584.400" r="3.7" fill="#245b91" fill-opacity="0.78"><title>plain: 2.356213088 seconds</title></circle>
+<circle cx="534.604" cy="588.200" r="3.7" fill="#245b91" fill-opacity="0.78"><title>plain: 2.366584096 seconds</title></circle>
+<circle cx="539.407" cy="592.000" r="3.7" fill="#245b91" fill-opacity="0.78"><title>plain: 2.367545163 seconds</title></circle>
+<circle cx="554.013" cy="595.800" r="3.7" fill="#245b91" fill-opacity="0.78"><title>plain: 2.370468153 seconds</title></circle>
+<circle cx="549.277" cy="599.600" r="3.7" fill="#245b91" fill-opacity="0.78"><title>plain: 2.369520325 seconds</title></circle>
+<line x1="582.81" y1="578.00" x2="582.81" y2="606.00" stroke="#245b91" stroke-width="3"/>
+<text x="850.00" y="596.00" class="" text-anchor="start">mean 2.376231 s</text>
+<text x="224.00" y="639.00" class="" text-anchor="end">Candidate</text>
+<circle cx="512.907" cy="627.400" r="3.7" fill="#23734e" fill-opacity="0.78"><title>simd: 2.362242237 seconds</title></circle>
+<circle cx="421.480" cy="631.200" r="3.7" fill="#23734e" fill-opacity="0.78"><title>simd: 2.343946170 seconds</title></circle>
+<circle cx="482.116" cy="635.000" r="3.7" fill="#23734e" fill-opacity="0.78"><title>simd: 2.356080344 seconds</title></circle>
+<circle cx="503.745" cy="638.800" r="3.7" fill="#23734e" fill-opacity="0.78"><title>simd: 2.360408793 seconds</title></circle>
+<circle cx="449.310" cy="642.600" r="3.7" fill="#23734e" fill-opacity="0.78"><title>simd: 2.349515398 seconds</title></circle>
+<circle cx="429.047" cy="627.400" r="3.7" fill="#23734e" fill-opacity="0.78"><title>simd: 2.345460538 seconds</title></circle>
+<circle cx="400.852" cy="631.200" r="3.7" fill="#23734e" fill-opacity="0.78"><title>simd: 2.339818233 seconds</title></circle>
+<circle cx="624.476" cy="635.000" r="3.7" fill="#23734e" fill-opacity="0.78"><title>simd: 2.384568777 seconds</title></circle>
+<circle cx="455.312" cy="638.800" r="3.7" fill="#23734e" fill-opacity="0.78"><title>simd: 2.350716415 seconds</title></circle>
+<circle cx="307.879" cy="642.600" r="3.7" fill="#23734e" fill-opacity="0.78"><title>simd: 2.321212815 seconds</title></circle>
+<line x1="458.71" y1="621.00" x2="458.71" y2="649.00" stroke="#23734e" stroke-width="3"/>
+<text x="850.00" y="639.00" class="" text-anchor="start">mean 2.351397 s</text>
+<text x="24.00" y="693.00" class="muted" text-anchor="start">Fresh null max drift: 0.220% · 2% declared gate · host/order checks passed</text>
+<line x1="24.00" y1="701.00" x2="1040.00" y2="701.00" stroke="#dfe5e8" stroke-width="1"/>
+<text x="24.00" y="720.00" class="muted" text-anchor="start">Horizontal scale is seconds and does not start at zero; compare within each panel. n=10 per variant; no trimming.</text>
+</svg>

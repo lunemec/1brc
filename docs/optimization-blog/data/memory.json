@@ -1,0 +1,32 @@
+{
+  "source_report": "results/research/20261006/buffer-pool/acceptance.json",
+  "source_report_sha256": "9d31e879c590fc27a6ee90dba86d2f8abd8d82082c0a7c4ebf33eb50e045bbba",
+  "diagnostic_only": true,
+  "units": "bytes (convert to decimal GB by division by 1e9)",
+  "variants": {
+    "standard/baseline": {
+      "total_alloc_bytes": 13822077984,
+      "sampled_peak_rss_bytes": 291991552,
+      "after_gc_heap_bytes": 624872,
+      "gc_cycles": 130
+    },
+    "standard/pool": {
+      "total_alloc_bytes": 131817216,
+      "sampled_peak_rss_bytes": 147841024,
+      "after_gc_heap_bytes": 615744,
+      "gc_cycles": 3
+    },
+    "10k/baseline": {
+      "total_alloc_bytes": 17098455112,
+      "sampled_peak_rss_bytes": 288616448,
+      "after_gc_heap_bytes": 632096,
+      "gc_cycles": 152
+    },
+    "10k/pool": {
+      "total_alloc_bytes": 136553776,
+      "sampled_peak_rss_bytes": 150208512,
+      "after_gc_heap_bytes": 613312,
+      "gc_cycles": 3
+    }
+  }
+}
