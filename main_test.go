@@ -2,11 +2,19 @@ package main
 
 import (
 	"bytes"
+	"sort"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestJavaStringLess(t *testing.T) {
+	names := []stationName{"\ue000", "B", "😀", "A", "AA"}
+	sort.Slice(names, func(i, j int) bool { return javaStringLess(names[i], names[j]) })
+
+	assert.Equal(t, []stationName{"A", "AA", "B", "😀", "\ue000"}, names)
+}
 
 var (
 	stationNames = []stationName{
@@ -50,7 +58,11 @@ func TestChunkByBytes(t *testing.T) {
 	}
 
 	indexes := chunkByBytes(bytes.NewReader(testData), 32)
-	got := chanToSlice(indexes)
+	var got []chunk
+	for c := range indexes {
+		got = append(got, chunk{data: bytes.Clone(c.data)})
+		c.release()
+	}
 
 	require.Len(t, got, len(want))
 	for i, w := range want {
@@ -72,21 +84,21 @@ func TestParseLine(t *testing.T) {
 Ljubljana;-24.3
 `)
 
-	newlineIdx, name, msrmnt := parseLine(data)
+	newlineIdx, name, msrmnt, _ := parseLine(data)
 
 	assert.Equal(t, 14, newlineIdx)
 	assert.Equal(t, stationName("Bridgetown"), name)
 	assert.Equal(t, measurement(93), msrmnt)
 
 	data = data[newlineIdx+1:]
-	newlineIdx, name, msrmnt = parseLine(data)
+	newlineIdx, name, msrmnt, _ = parseLine(data)
 
 	assert.Equal(t, 13, newlineIdx)
 	assert.Equal(t, stationName("Ürümqi"), name)
 	assert.Equal(t, measurement(-3), msrmnt)
 
 	data = data[newlineIdx+1:]
-	newlineIdx, name, msrmnt = parseLine(data)
+	newlineIdx, name, msrmnt, _ = parseLine(data)
 
 	assert.Equal(t, 15, newlineIdx)
 	assert.Equal(t, stationName("Ljubljana"), name)
@@ -108,7 +120,7 @@ func BenchmarkParseLine(b *testing.B) {
 	data := testData
 
 	for range b.N {
-		newlineIdx, name, msrmnt = parseLine(data)
+		newlineIdx, name, msrmnt, _ = parseLine(data)
 	}
 
 	NewlineIdx = newlineIdx
@@ -271,93 +283,87 @@ func TestSumStationData(t *testing.T) {
 }
 
 func TestMean(t *testing.T) {
-	want := float64(18.1)
-	got := mean(sumT(11277704), 62452)
-
-	if want != got {
-		t.Errorf("TestMean, got: %+v, want: %+v", got, want)
+	tests := []struct {
+		name  string
+		sum   sumT
+		count countT
+		want  float64
+	}{
+		{name: "ordinary", sum: 11277704, count: 62452, want: 18.1},
+		{name: "positive tie", sum: 50, count: 4, want: 1.3},
+		{name: "negative tie", sum: -50, count: 4, want: -1.2},
+		{name: "negative below tie", sum: -51, count: 4, want: -1.3},
 	}
 
-	want = float64(1.3)
-	got = mean(sumT(50), 4)
-
-	if want != got {
-		t.Errorf("TestMean, got: %+v, want: %+v", got, want)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, mean(tt.sum, tt.count))
+		})
 	}
 }
 
 func TestSimpleMapSet(t *testing.T) {
 	m := newSimpleMap(maxStations)
-
-	pos := m.pos("testname")
+	name := stationName("testname")
+	pos := m.pos(name)
 	st := stats{sum: 10, min: 10, max: 10, count: 1}
-	m.set(pos, "testname", &st)
-
-	expect := bucket{
-		items: []bucketItem{
-			{
-				name:  "testname",
-				stats: &st,
-			},
-		},
-	}
-	assert.Equal(t, expect, m.data[pos])
-
+	m.set(pos, name, &st)
+	got, ok := m.get(pos, name)
+	require.True(t, ok)
+	assert.Equal(t, st, *got)
+	assert.Equal(t, 1, m.len())
 	st = stats{sum: 20, min: 20, max: 20, count: 2}
-	m.set(pos, "testname", &st)
-
-	expect = bucket{
-		items: []bucketItem{
-			{
-				name:  "testname",
-				stats: &st,
-			},
-		},
-	}
-	assert.Equal(t, expect, m.data[pos])
+	m.set(pos, name, &st)
+	got, ok = m.get(pos, name)
+	require.True(t, ok)
+	assert.Equal(t, st, *got)
+	assert.Equal(t, 1, m.len())
 }
-
 func TestSimpleMapGet(t *testing.T) {
 	m := newSimpleMap(maxStations)
-	pos := m.pos("testname")
-
+	name := stationName("testname")
+	pos := m.pos(name)
 	st := stats{sum: 10, min: 10, max: 10, count: 1}
-	m.data[pos] = bucket{
-		items: []bucketItem{
-			{
-				name:  "testname",
-				stats: &st,
-			},
-		},
-	}
-
-	expect := st
-	got, ok := m.get(pos, "testname")
-	assert.True(t, ok)
-	assert.Equal(t, expect, *got)
-
+	m.set(pos, name, &st)
+	got, ok := m.get(pos, name)
+	require.True(t, ok)
+	assert.Equal(t, st, *got)
 	got, ok = m.get(pos, "")
 	assert.False(t, ok)
 	assert.Empty(t, got)
 }
 
-var Idx uint32
+var Fingerprint uint64
 
-// BenchmarkStationIdx-8   	36248710	        31.03 ns/op	       0 B/op	       0 allocs/op
-func BenchmarkStationIdx(b *testing.B) {
-	var idx uint32
+func BenchmarkStationFingerprint(b *testing.B) {
+	var fingerprint uint64
 	for range b.N {
-		for _, stationName := range stationNames {
-			idx = stationPos(stationName, maxStations)
+		for _, name := range stationNames {
+			fingerprint = stationFingerprint(name)
 		}
 	}
-
-	Idx = idx
+	Fingerprint = fingerprint
 }
 
 func BenchmarkRun(b *testing.B) {
 	bench = true
 	for range b.N {
-		run(defaultMeasurementsFile)
+		if err := run(defaultMeasurementsFile); err != nil {
+			b.Fatal(err)
+		}
 	}
+}
+
+func TestFlatKeyIdentity(t *testing.T) {
+	names := []stationName{"A", "B", "a\x00", "a", "é", "😀", "abcdefghX", "abcdefghY", "abcdefgh", "abcdefgh\x00", "12345678abcdefghX", "12345678abcdefghY"}
+	m := newSimpleMap(maxStations)
+	for i, name := range names {
+		updateStats(m.find(name), measurement(i))
+	}
+	for i, name := range names {
+		got, ok := m.get(m.pos(name), name)
+		require.True(t, ok)
+		assert.Equal(t, stats{sum: sumT(i), min: minT(i), max: maxT(i), count: 1}, *got)
+	}
+	assert.Equal(t, len(names), m.len())
 }

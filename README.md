@@ -1,131 +1,264 @@
-# 1️⃣🐝🏎️ The One Billion Row Challenge
+# 1BRC cross-language benchmark
 
-The **fast-er** Go variant of 1brc!
+This repository compares selected implementations of the One Billion Row
+Challenge on the same machine and input file, then provides a tight loop for
+tuning the Go implementation in `main.go`.
 
-Because I also don't have access to the Hetzner Instance, here are measurements done locally (MBP M1 2020 16GB) on the generated 1B lines:
+The benchmark protocol is adapted from
+[gunnarmorling/1brc](https://github.com/gunnarmorling/1brc): every
+implementation has an optional build script and a required run script.
 
-| Program | Time |
-| ------- | ---- |
-| Java thomaswue (TOP) | 15.350s |
-| Go elh | 7.571s |
-| Go AlexanderYastrebov | 17.966s |
-| Go shraddhaag | 18.809s |
-| **Go lunemec** | **7.128s** |
-| **Go benhoyt** | **5.034s** |
+## Requirements
 
-I'm not including the latest variant by [Renato Pereira](https://r2p.dev/b/2024-03-18-1brc-go/) because even though it was faster (6.674s), 
-it did not produce valid output on my machine (after copy+paste from the blog, I could not find repo). Also it did use swissmap, which is against the rules (deps here are strictly tests).
+- Bash
+- Python 3.10 or newer for full-run host quietness monitoring
+- `jq`
+- Go 1.23 or newer
+- The Go adapter enables experimental SIMD when the installed compiler supports
+  it (Go 1.27 here), preserving other `GOEXPERIMENT` settings. AVX2 runs on
+  supported amd64 CPUs; other CPUs/builds use the scalar parser. Set
+  `GOEXPERIMENT=nodwarf5,nosimd` to select the scalar build on this machine.
+- [hyperfine](https://github.com/sharkdp/hyperfine)
+- OpenJDK 21 for the Java JVM reference
+- A C11 compiler with AArch64 CRC32C or x86-64 SSE4.2 support for the C reference
+- Rust and Cargo
+- GraalVM 21.0.2 `native-image` only for the optional Java native reference
 
-### Can we beat them? 🥁
+## Adapter convention
 
-Here are the results!
-```shell
- λ hyperfine -w 2 'target/lunemec measurements.txt'
-Benchmark 1: target/lunemec measurements.txt
-  Time (mean ± σ):      7.128 s ±  0.019 s    [User: 47.592 s, System: 2.149 s]
-  Range (min … max):    7.098 s …  7.163 s    10 runs
-```
-vs
-```shell
- λ hyperfine -w 2 'target/elh measurements.txt'
-Benchmark 1: target/elh measurements.txt
-  Time (mean ± σ):      7.571 s ±  0.052 s    [User: 45.990 s, System: 2.245 s]
-  Range (min … max):    7.498 s …  7.650 s    10 runs
-```
+For an implementation named `<id>`:
 
-**Whole 3.5% faster**! It ain't much, but its honest work!
+- `prepare_<id>.sh` optionally builds it.
+- `calculate_average_<id>.sh` runs it against `measurements.txt` and writes
+  only the canonical result to stdout.
 
-However, there is new contender on the block:
-```shell
- λ hyperfine -w 2 'target/benhoyt measurements.txt'
-Benchmark 1: target/benhoyt measurements.txt
-  Time (mean ± σ):      5.034 s ±  0.638 s    [User: 25.078 s, System: 2.786 s]
-  Range (min … max):    4.548 s …  6.752 s    10 runs
-```
+The wrapper owns the temporary `measurements.txt` symlink, so third-party
+implementations can retain the filename expected by the original challenge.
+All runners execute in a disposable workspace; validation never removes or
+replaces a repository-root `measurements.txt`.
 
-### 10k unique station names
-```shell
- λ hyperfine -w 2 'target/lunemec measurements3.txt'
-Benchmark 1: target/lunemec measurements3.txt
-  Time (mean ± σ):     14.423 s ±  0.083 s    [User: 101.053 s, System: 2.987 s]
-  Range (min … max):   14.355 s … 14.584 s    10 runs
-```
-vs
-```shell
- λ hyperfine -w 2 'target/elh measurements3.txt'
-Benchmark 1: target/elh measurements3.txt
-  Time (mean ± σ):     12.746 s ±  0.043 s    [User: 84.343 s, System: 2.981 s]
-  Range (min … max):   12.672 s … 12.801 s    10 runs
-```
+Available implementations:
 
-and the fastest is:
-```shell
- λ hyperfine -w 2 'target/benhoyt measurements3.txt'
-Benchmark 1: target/benhoyt measurements3.txt
-  Time (mean ± σ):      9.091 s ±  0.037 s    [User: 52.046 s, System: 4.699 s]
-  Range (min … max):    9.038 s …  9.135 s    10 runs
+- `go-lunemec`
+- `java-baseline` (correctness and oracle generation only)
+- `java-thomaswue-jvm`
+- `java-thomaswue-native` (requires GraalVM Native Image)
+- `c-matt-re`
+- `rust-mtopolnik`
+
+Reference source revisions and local correctness changes are documented in
+[`third_party/README.md`](third_party/README.md).
+
+## Validate correctness
+
+```sh
+./bench.sh validate \
+    java-baseline \
+    go-lunemec \
+    java-thomaswue-jvm \
+    c-matt-re \
+    rust-mtopolnik
 ```
 
-### Details
+Every selected implementation first runs the pinned upstream `test.sh` and
+`tocsv.sh`, then must match every expected sample output byte-for-byte. The
+strict pass includes local rounding and supplementary-Unicode ordering cases
+that are not in the original suite.
 
-There are few differences in my approach, where some time is saved:
-1) Custom hash function that does 2 bytes at once while not having too many collisions.
-2) Custom hashmap implementation that allows me to hash only 1x and use the hashed position.
-3) Reading only `\n` from the data chunk using bytes.IndexByte, which uses optimised assembly instructions and is very fast, then finding `;` using byte index offset.
-4) Unrolling the measurement by hand for all 4 variants.
+`./test_harness.sh` checks that passing and deliberately broken adapters, plus
+oracle generation, leave a repository-root `measurements.txt` untouched.
 
-There are some other general approaches that make it fast overall, but they were used in other implementations already:
-1) Measurements (-99.9) are parsed into int16 (10x multiply), and transformed to float only 1x for the final print.
-2) Using `*stats` in the hashmap so the values can be updated in-place.
-3) Reading chunks of 20MiB per worker goroutine, mmap is 2-3x slower.
-4) Using `unsafe.String` to avoid extra copies of the station name.
+Run the generated stress suite separately. It covers 10,000 mostly 96–100 byte
+UTF-8 station names, long files with diverse UTF-8 names, and aggregates large
+enough to overflow a 32-bit sum:
 
-
-### Measuring
-
-By compiling the source code, and using [hyperfine](https://github.com/sharkdp/hyperfine) benchmarking tool.
-
-Or by running the test benchmark harness like this:
-```go
-func BenchmarkRun(b *testing.B) {
-	bench = true
-	for range b.N {
-		run(defaultMeasurementsFile)
-	}
-}
+```sh
+./bench.sh stress \
+    go-lunemec \
+    java-thomaswue-jvm \
+    java-thomaswue-native \
+    c-matt-re \
+    rust-mtopolnik
 ```
 
-This allows me to run each test 20x, and use benchstat to compare the versions.
-```shell
-go test -count 20 -run="^$" -bench "^BenchmarkRun$" . > full_lunemec.txt
+This is a correctness gate only; it does not invoke Hyperfine.
+
+The inputs are generated under `build/stress/`; the slow Java baseline creates
+their trusted outputs. To validate any other corpus without timing it, place
+its oracle beside it with the same base name and run:
+
+```sh
+./bench.sh verify measurements_10K_1B.txt go-lunemec rust-mtopolnik
 ```
 
+The original README has one distinct bonus corpus: the 10K Key Set, containing
+one billion rows across 10,000 station names. Generate it and its independent
+baseline output once:
 
-## Original 1BRC description snippet
-
-<img src="1brc.png" alt="1BRC" style="display: block; margin-left: auto; margin-right: auto; margin-bottom:1em; width: 50%;">
-
-The text file contains temperature values for a range of weather stations.
-Each row is one measurement in the format `<string: station name>;<double: measurement>`, with the measurement value having exactly one fractional digit.
-
-The following shows ten rows as an example:
-
-```
-Hamburg;12.0
-Bulawayo;8.9
-Palembang;38.8
-St. John's;15.2
-Cracow;12.6
-Bridgetown;26.9
-Istanbul;6.2
-Roseau;34.4
-Conakry;31.2
-Istanbul;23.0
+```sh
+./generate_measurements.sh 10k
+./generate_oracle.sh measurements_10K_1B.txt
 ```
 
-The task is to write a program which reads the file, calculates the min, mean, and max temperature value per weather station, and emits the results on stdout like this
-(i.e. sorted alphabetically by station name, and the result values per station in the format `<min>/<mean>/<max>`, rounded to one fractional digit):
+Then validate both original one-billion-row corpora without running Hyperfine:
 
+```sh
+./bench.sh validate-full \
+    go-lunemec \
+    java-thomaswue-jvm \
+    java-thomaswue-native \
+    c-matt-re \
+    rust-mtopolnik
 ```
-{Abha=-23.0/18.0/59.2, Abidjan=-16.2/26.0/67.3, Abéché=-10.0/29.4/69.0, Accra=-10.1/26.4/66.4, Addis Ababa=-23.7/16.0/67.0, Adelaide=-27.8/17.3/58.5, ...}
+
+The README's 32-core bonus is a hardware configuration, not another corpus, so
+it has the same expected output as the canonical input. `CreateMeasurements2`
+and `CreateMeasurementsFast` are alternative ways to create the canonical
+corpus rather than separate validation cases.
+
+The pinned upstream generators are intentionally unseeded. A newly generated
+corpus will have different bytes and must receive its own oracle and checksum
+manifest; the committed manifests identify the retained local corpora.
+
+## Establish or refresh a full baseline
+
+Generate the original one-billion-row corpus as `measurements_1B.txt`, then
+create its trusted output once as `measurements_1B.out` using an independent
+reference implementation. Oracle generation also writes a checksum manifest
+for the dataset and output. Existing files are never replaced implicitly; use
+`--replace` when intentionally refreshing both files.
+
+```sh
+./generate_measurements.sh
+./generate_oracle.sh measurements_1B.txt
+
+# Only when deliberately refreshing an existing oracle:
+./generate_oracle.sh --replace measurements_1B.txt
+
+./bench.sh null-control measurements_1B.txt go-lunemec
+
+./bench.sh compare measurements_1B.txt \
+    go-lunemec \
+    java-thomaswue-jvm \
+    c-matt-re \
+    rust-mtopolnik
 ```
+
+Run the null control once after the machine is quiet and before comparing real
+implementations. It preconditions the selected implementation for 60 seconds,
+then benchmarks the same unchanged artifact under two labels in isolated
+`A-B-B-A` blocks without cooldowns. Each block defaults to two warmups and five
+measured runs. The wrapper verifies exact output, checks that the artifact did
+not change, records a system and thermal snapshot before every block, and exits
+with status 2 when label or order drift exceeds `DRIFT_THRESHOLD_PERCENT`
+(default 1%). This is the maximum absolute difference in mean runtime across
+pooled labels, the first and second halves, and each label's two blocks. It
+measures repeatability, independently of CPU load. Keep 1% for small-change
+optimization; 2% is a reasonable declared tolerance for broad comparisons.
+A larger tolerance changes the gate, not the observed noise or precision.
+Override the duration, sample count, or tolerance deliberately:
+
+```sh
+PRECONDITION_SECONDS=90 RUNS=5 WARMUPS=2 \
+    ./bench.sh null-control measurements_1B.txt go-lunemec
+
+DRIFT_THRESHOLD_PERCENT=2 \
+    ./bench.sh null-control measurements_10K_1B.txt go-lunemec
+```
+
+Null-control JSON, logs, block statistics, drift analysis, health snapshots,
+and metadata are written under `results/`.
+
+Full timing runs (inputs of at least 1 GiB) now require a host quietness check.
+`benchmark_quiet.py` samples ten seconds before launching the harness and monitors
+background work every two seconds throughout the window, without adding pauses
+between timing blocks. It excludes benchmark descendants, records temperatures,
+and stops the owned benchmark if unrelated CPU work, swapping, I/O or memory
+contention exceeds its limits. Defaults permit at most 0.5 busy CPU cores in total
+and 0.25 cores per background process; one core means one logical CPU fully busy.
+Paging above 64 KiB/s rejects a window. With Linux RAM-only zram swap, page-ins
+are recorded and assessed through CPU/I/O/memory pressure; swap-outs still reject
+above that rate. Other swap devices retain the combined paging limit.
+Linux also checks kernel CPU, pressure and available memory. macOS checks process
+CPU, VM counters and reported thermal limits. An incomplete Linux process view
+fails closed, so run full comparisons on the host. Every attempted window keeps
+its `.quiet.json` report under `results/`. A passed quietness check still requires
+the declared null and order-drift checks before accepting a performance result.
+Preparatory cache reads are recorded but exempt from the I/O and paging limits;
+those limits apply once the harness marks the cache ready for timing. Background
+CPU remains checked throughout preparation and timing; preparation-only activity
+is retained as a flag, including each block's excluded warm-ups. Violations during
+measured runs stop the run. The initial idle
+preflight still requires all quietness limits to pass.
+Experiment runners can declare `--timed-process-names` to apply the I/O gate
+only to intervals where the same owned benchmark process remained active.
+This excludes report/file bookkeeping between runs from I/O rejection; every
+interval is still recorded. CPU, memory and paging gates retain their timing-phase
+coverage. Other runners keep the whole-phase I/O check.
+Linux also accounts for exited benchmark children when checking residual host
+CPU, adopts orphaned benchmark descendants and reaps them before returning.
+macOS relies on observed processes and second-resolution birth identities;
+short activity between samples remains a limitation of that process view.
+
+Before timing, the wrapper verifies the dataset and oracle checksums, builds
+each implementation, runs both validation suites, and compares its full output
+with `measurements_1B.out`. Hyperfine then performs ten timed runs by default.
+Each timed output is compared with the oracle before the next run.
+
+The default balanced order splits those ten runs between a forward adapter pass
+and a reverse adapter pass. `WARMUPS` applies to each pass. Use `ORDER=forward`
+or `ORDER=reverse` only when deliberately collecting a single-order result.
+
+Override the run and Hyperfine warm-up counts when needed:
+
+```sh
+RUNS=20 WARMUPS=2 ./bench.sh compare measurements_1B.txt go-lunemec
+```
+
+Each comparison writes raw Hyperfine JSON, a tab-separated statistical summary,
+and metadata under `results/`. Set `RESULTS_DIR` to place final artifacts outside
+the repository. The summary includes the upstream-style mean
+after dropping the fastest and slowest observations, median, standard
+deviation, coefficient of variation, and a warning above 3% variation. Metadata
+records the corpus and oracle hashes, Git state, command order, system and power
+state, toolchains, and adapter artifact hashes. Only wall-clock measurements are
+reported because the Thomas JVM launcher creates a worker process.
+
+Reference results are valid only for the recorded hardware, OS, toolchains,
+source revisions, and protocol. Rerun them after any of those change and once
+more before publishing a final cross-language comparison.
+
+Health snapshots before each comparison pass and null-control block record
+system activity. On Linux they include memory, CPU/I/O/memory pressure, CPU
+governor, temperatures, and a one-second process sample. Run the harness outside
+a PID-isolating sandbox when the process sample must include desktop and service
+activity.
+
+The Thomas Würthinger leaderboard entry is a GraalVM native image, not a normal
+JVM run. Keep `java-thomaswue-jvm` and `java-thomaswue-native` as separate
+results. Once `native-image` is installed, validate and include the latter like
+any other adapter:
+
+```sh
+./bench.sh validate java-thomaswue-native
+```
+
+## Go tuning loop
+
+Use the full executable benchmark as the deciding metric:
+
+```sh
+./bench.sh validate go-lunemec
+./bench.sh compare measurements_1B.txt go-lunemec
+```
+
+Use Go microbenchmarks and profiles only to explain an observed result. Change
+one thing at a time and retain the Hyperfine JSON for each meaningful version.
+Accepted, rejected, and queued changes are tracked in
+[`EXPERIMENTS.md`](EXPERIMENTS.md).
+
+## Challenge contract
+
+Input lines have the form `<station>;<temperature>`. The program emits stations
+in alphabetical order as `{station=min/mean/max, ...}`, rounded to one decimal
+place. The full challenge input contains 1,000,000,000 rows.

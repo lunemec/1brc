@@ -1,0 +1,6 @@
+Positive;1.2
+Positive;1.2
+Positive;1.3
+Negative;-1.3
+Negative;-1.3
+Negative;-1.2

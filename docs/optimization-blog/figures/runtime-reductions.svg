@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="664" viewBox="0 0 1080 664" role="img" aria-labelledby="title desc">
+<title id="title">Measured runtime reductions</title>
+<desc id="desc">Every accepted Linux confirmation window is shown separately. Bars start at zero and show same-window runtime reduction; they are not cumulative. All windows include ten measured runs per variant.</desc>
+<rect width="100%" height="100%" fill="#ffffff"/>
+<style>text{font-family:DejaVu Sans,Arial,sans-serif;fill:#18252f;font-size:13px}.muted{fill:#52616b;font-size:12px}.title{font-size:21px;font-weight:bold}.grid{stroke:#dfe5e8;stroke-width:1}</style>
+<text x="24.00" y="34.00" class="title" text-anchor="start">Accepted changes: same-window runtime reduction</text>
+<text x="24.00" y="58.00" class="muted" text-anchor="start">Ryzen 7 5800X · 1 billion rows · 10 observations per variant · repeats kept separately</text>
+<line x1="360.00" y1="90.00" x2="360.00" y2="602.00" stroke="#dfe5e8" stroke-width="1"/>
+<text x="360.00" y="623.00" class="muted" text-anchor="middle">0%</text>
+<line x1="484.00" y1="90.00" x2="484.00" y2="602.00" stroke="#dfe5e8" stroke-width="1"/>
+<text x="484.00" y="623.00" class="muted" text-anchor="middle">10%</text>
+<line x1="608.00" y1="90.00" x2="608.00" y2="602.00" stroke="#dfe5e8" stroke-width="1"/>
+<text x="608.00" y="623.00" class="muted" text-anchor="middle">20%</text>
+<line x1="732.00" y1="90.00" x2="732.00" y2="602.00" stroke="#dfe5e8" stroke-width="1"/>
+<text x="732.00" y="623.00" class="muted" text-anchor="middle">30%</text>
+<line x1="856.00" y1="90.00" x2="856.00" y2="602.00" stroke="#dfe5e8" stroke-width="1"/>
+<text x="856.00" y="623.00" class="muted" text-anchor="middle">40%</text>
+<line x1="980.00" y1="90.00" x2="980.00" y2="602.00" stroke="#dfe5e8" stroke-width="1"/>
+<text x="980.00" y="623.00" class="muted" text-anchor="middle">50%</text>
+<text x="348.00" y="109.00" class="" text-anchor="end">Robust table · standard / 9</text>
+<rect x="360" y="94" width="68.681" height="22" rx="2" fill="#245b91"/>
+<text x="437.68" y="109.00" class="" text-anchor="start">5.539%</text>
+<text x="348.00" y="145.00" class="" text-anchor="end">Robust table · 10K / 3</text>
+<rect x="360" y="130" width="525.613" height="22" rx="2" fill="#23734e"/>
+<text x="894.61" y="145.00" class="" text-anchor="start">42.388%</text>
+<text x="348.00" y="181.00" class="" text-anchor="end">First-word reuse · standard / 6</text>
+<rect x="360" y="166" width="67.171" height="22" rx="2" fill="#245b91"/>
+<text x="436.17" y="181.00" class="" text-anchor="start">5.417%</text>
+<text x="348.00" y="217.00" class="" text-anchor="end">First-word reuse · 10K / 2</text>
+<rect x="360" y="202" width="36.022" height="22" rx="2" fill="#23734e"/>
+<text x="405.02" y="217.00" class="" text-anchor="start">2.905%</text>
+<text x="348.00" y="253.00" class="" text-anchor="end">First-word reuse · 10K / 3</text>
+<rect x="360" y="238" width="48.750" height="22" rx="2" fill="#23734e"/>
+<text x="417.75" y="253.00" class="" text-anchor="start">3.931%</text>
+<text x="348.00" y="289.00" class="" text-anchor="end">Temperature word · standard / 1</text>
+<rect x="360" y="274" width="44.147" height="22" rx="2" fill="#245b91"/>
+<text x="413.15" y="289.00" class="" text-anchor="start">3.560%</text>
+<text x="348.00" y="325.00" class="" text-anchor="end">Temperature word · 10K / 1</text>
+<rect x="360" y="310" width="23.406" height="22" rx="2" fill="#23734e"/>
+<text x="392.41" y="325.00" class="" text-anchor="start">1.888%</text>
+<text x="348.00" y="361.00" class="" text-anchor="end">Temperature word · 10K / 2</text>
+<rect x="360" y="346" width="47.457" height="22" rx="2" fill="#23734e"/>
+<text x="416.46" y="361.00" class="" text-anchor="start">3.827%</text>
+<text x="348.00" y="397.00" class="" text-anchor="end">Buffer reuse · standard / 1</text>
+<rect x="360" y="382" width="156.748" height="22" rx="2" fill="#245b91"/>
+<text x="525.75" y="397.00" class="" text-anchor="start">12.641%</text>
+<text x="348.00" y="433.00" class="" text-anchor="end">Buffer reuse · 10K / 1</text>
+<rect x="360" y="418" width="264.832" height="22" rx="2" fill="#23734e"/>
+<text x="633.83" y="433.00" class="" text-anchor="start">21.357%</text>
+<text x="348.00" y="469.00" class="" text-anchor="end">Pooled AVX2 · standard / 3</text>
+<rect x="360" y="454" width="14.737" height="22" rx="2" fill="#245b91"/>
+<text x="383.74" y="469.00" class="" text-anchor="start">1.189%</text>
+<text x="348.00" y="505.00" class="" text-anchor="end">Pooled AVX2 · standard / 4</text>
+<rect x="360" y="490" width="16.554" height="22" rx="2" fill="#245b91"/>
+<text x="385.55" y="505.00" class="" text-anchor="start">1.335%</text>
+<text x="348.00" y="541.00" class="" text-anchor="end">Pooled AVX2 · 10K / 3</text>
+<rect x="360" y="526" width="20.405" height="22" rx="2" fill="#23734e"/>
+<text x="389.40" y="541.00" class="" text-anchor="start">1.646%</text>
+<text x="348.00" y="577.00" class="" text-anchor="end">Pooled AVX2 · 10K / 4</text>
+<rect x="360" y="562" width="12.959" height="22" rx="2" fill="#23734e"/>
+<text x="381.96" y="577.00" class="" text-anchor="start">1.045%</text>
+<text x="24.00" y="652.00" class="muted" text-anchor="start">Blue: standard · Green: 10K · Each row has its own baseline. These gains cannot be added or multiplied.</text>
+</svg>
