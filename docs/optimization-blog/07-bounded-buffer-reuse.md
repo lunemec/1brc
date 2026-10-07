@@ -31,13 +31,8 @@ The producer follows three rules:
 3. Otherwise, wait for a worker to return one.
 
 With sixteen workers and an unbuffered work channel, each worker can hold one chunk.
-The producer can hold one additional buffer:
-
-$$
-N_{\text{buffers}}\le W+1=17,
-\qquad
-M_{\text{input buffers}}\le17\times6\ \text{MiB}=102\ \text{MiB}.
-$$
+The producer can hold one additional buffer.
+This limits input storage to seventeen buffers, or 102 MiB.
 
 That bound covers input arrays, not tables, keys, or total process memory.
 Buffers are allocated only as demand grows.

@@ -72,8 +72,9 @@ For `NegativeTie`, the mean is `-16.5` tenths and must round to `-16`, which pri
 | If `2*r >= n`: `q++` | -16 | 1 |
 | Convert rounded tenths to degrees | -1.6 | — |
 
-After the negative-remainder adjustment, $S=qn+r$ with $0\le r<n$.
-Incrementing $q$ when $2r\ge n$ implements the required tie rule.
+After the adjustment, the remainder is nonnegative and less than the count.
+If twice the remainder is at least the count, increment the quotient.
+This rounds exact ties toward positive infinity.
 The earlier [oracle repair](https://github.com/lunemec/1brc/commit/010340d) supplies the independent expected answer.
 
 ## Match Java's name order

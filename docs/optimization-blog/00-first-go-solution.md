@@ -26,15 +26,8 @@ The mean is `292 / 2 = 146` tenths.
 The output is `Istanbul=6.2/14.6/23.0`.
 The first observation must set both extrema, or an all-positive station gets an incorrect minimum of zero.
 
-$$
-S=\sum_{i=1}^{n}x_i,\qquad
-\text{min}=\min_i x_i,\qquad
-\text{max}=\max_i x_i,\qquad
-\text{mean in degrees}=\frac{S}{10n}.
-$$
-
 `int16` holds temperatures and extrema, `uint32` holds the count, and `int64` holds the sum.
-The largest possible absolute sum is $999\times10^9=999{,}000{,}000{,}000$, which exceeds 32 bits.
+The largest possible absolute sum is 999,000,000,000, which exceeds 32 bits.
 Floating-point conversion happens only during final formatting.
 
 ## Give each worker complete rows
@@ -57,13 +50,10 @@ The original source uses 32 MiB chunks, despite its README's 20 MiB description.
 The later working version changes this to 6 MiB.
 
 Each worker owns its station table, so updates need no shared lock.
-The merger reuses the first completed table and combines the others:
+The merger reuses the first completed table.
+It adds counts and sums, then keeps the lower minimum and higher maximum.
 
-$$
-(S_1,n_1,m_1,M_1)\oplus(S_2,n_2,m_2,M_2)
-=(S_1+S_2,n_1+n_2,\min(m_1,m_2),\max(M_1,M_2)).
-$$
-
+The tuples below list sum, count, minimum, and maximum.
 For Istanbul, `(62, 1, 62, 62)` and `(230, 1, 230, 230)` combine into `(292, 2, 62, 230)`.
 This matches the sequential result.
 Later fixes handle previously absent stations correctly.
@@ -74,12 +64,12 @@ The input has four temperature forms.
 ASCII digits have consecutive values, with `'0'` equal to 48.
 Subtracting 48 gives each digit's value:
 
-| Layout | Example | Integer calculation |
+| Layout | Example | Integer tenths |
 | --- | --- | --- |
-| `d.d` | `6.2` | $10\times6+2=62$ |
-| `dd.d` | `23.0` | $100\times2+10\times3+0=230$ |
-| `-d.d` | `-6.2` | $-(10\times6+2)=-62$ |
-| `-dd.d` | `-12.6` | $-(100\times1+10\times2+6)=-126$ |
+| `d.d` | `6.2` | 62 |
+| `dd.d` | `23.0` | 230 |
+| `-d.d` | `-6.2` | -62 |
+| `-dd.d` | `-12.6` | -126 |
 
 The five-byte negative case reads only the required digits:
 

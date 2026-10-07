@@ -44,12 +44,8 @@ The four layouts give:
 | `-12.6` | 3 | 28 | 0 |
 
 This assumes legal temperature text, rather than validating arbitrary numbers.
-The parser requires `dotPos <= 28` and an actual newline at the computed index:
-
-$$
-\text{newlineIdx}=\text{separatorIdx}+\lfloor\text{dotPos}/8\rfloor+3.
-$$
-
+The parser requires `dotPos <= 28` and an actual newline at the computed index.
+Add the decimal point's byte offset and three to the semicolon index.
 For this row, the index is `4+3+3=10`.
 
 ## 2. Form the sign mask
@@ -91,28 +87,10 @@ For `1.2`, the 16-bit shift leaves a zero hundreds digit and produces `0x0000000
 
 ## 4. Combine the digits with a multiply
 
-Let $h,t,u$ be the hundreds, tens, and units of integer tenths.
-Their byte positions give:
-
-$$
-D=h\,2^8+t\,2^{16}+u\,2^{32}.
-$$
-
-The multiplier places their weighted contributions at bit 32:
-
-$$
-K=\mathtt{0x640a0001}=1+10\,2^{16}+100\,2^{24}.
-$$
-
-$$
-(h\,2^8)(100\,2^{24})+
-(t\,2^{16})(10\,2^{16})+
-(u\,2^{32})(1)
-=(100h+10t+u)\,2^{32}.
-$$
-
+The multiplier weights the digits in bytes 1, 2, and 4 by 100, 10, and 1.
+Their contributions meet at bit 32 and produce 126 for this example.
 For legal digits, lower terms cannot carry into bit 32.
-After the shift, the extra term $100t\,2^8$ is a multiple of 1024.
+After the shift, extra upper terms are multiples of 1024.
 The ten-bit mask removes it and higher terms, while retaining every magnitude up to 999:
 
 ```go

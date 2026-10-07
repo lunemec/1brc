@@ -72,19 +72,13 @@ For example, the standard table comparison gives:
 | Baseline | 10 | 2.587160 s | 0.412% |
 | Table with split lookup | 10 | 2.443863 s | 0.724% |
 
-CV is relative variation: $100s/\bar t$, with sample standard deviation $s$.
+CV expresses the sample standard deviation as a percentage of the mean.
 The baseline/candidate order drift is `-0.061% / -0.322%`.
 Both adjacent comparisons favor the candidate.
 
 ## Report the effect without combining sessions
 
-$$
-\text{runtime reduction}=100\left(1-\frac{t_B}{t_A}\right)\%,
-\qquad
-\text{speedup}=\frac{t_A}{t_B}.
-$$
-
-For the table, `2.587160 → 2.443863 s` means 5.54% less runtime, or about $1.0586\times$ speedup.
+For the table, `2.587160 → 2.443863 s` means 5.54% less runtime, or a speedup of about 1.0586 times.
 The acceptance rule requires at least 1% on standard or 3% on 10K, with neither corpus more than 1% slower.
 Effects of 1–3% need an independent repeat, and extra complexity can require a larger gain.
 

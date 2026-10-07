@@ -13,8 +13,8 @@ type flatEntry struct {
 ```
 
 The name descriptor is inline, but its bytes remain separate.
-Each worker's entry array occupies $32768\times40=1{,}310{,}720$ bytes.
-At 10,000 names, occupancy is $10000/32768\approx30.52\%$.
+Each worker's entry array occupies 1,310,720 bytes.
+At 10,000 names, 30.52% of the slots contain entries.
 
 ## Use the complete short name as a fingerprint
 
@@ -25,14 +25,10 @@ A fingerprint is the number used to match a name.
 "Oslo" → bytes 4f 73 6c 6f → 0x000000006f6c734f
 ```
 
-The fingerprint is:
-
-$$
-h=\operatorname{rotl}_{64}(w\times\mathtt{0x517cc1b727220a95},17),
-$$
+The fingerprint multiplies that word by `0x517cc1b727220a95`, then rotates left by 17 bits.
 
 Multiplication wraps to 64 bits, and rotation moves departing bits back to the other end.
-An odd multiplier is invertible modulo $2^{64}$.
+The odd multiplier is reversible in 64-bit arithmetic.
 Both operations preserve distinct words.
 
 For names of the same length up to eight bytes, distinct names therefore have distinct full fingerprints.

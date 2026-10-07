@@ -39,11 +39,7 @@ Name length:      4 bytes
 Required word:    0x000000006f6c734f
 ```
 
-A mask selects the bits to retain:
-
-$$
-\text{mask}(n)=(1\ll8n)-1,\qquad 1\le n<8.
-$$
+A mask keeps only the name bytes.
 
 For four bytes, it is `0x00000000ffffffff`:
 
